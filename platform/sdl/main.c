@@ -34,6 +34,11 @@ static int touch_dir = 0;       /* digital touch: -1 left half, +1 right half */
 
 /* ---------- assets ---------- */
 static SDL_Texture *TEX[PNJ_NTEX];
+/* HDR output (desktop). The renderer is made with a linear output colorspace when the HDR option is on. SDL then scales ordinary (SDR) drawing to
+ * the display's SDR white level by itself, so the picture looks the same as before, and colors above 1.0 are free to go brighter than white.
+ * hdr_gain is how much brighter glow and sparkle sprites are pushed (1.0 = not at all). */
+static int hdr_active; static float hdr_headroom = 1.0f, hdr_gain = 1.0f;
+static int hdrtest_mode;                                    /* --hdrtest: show the brightness patches instead of the game */
 static int tex_sharp;                                      /* 1: nearest-neighbour scaling (Options > SCALE > PIXEL), 0: linear */
 static int TEXW[PNJ_NTEX];
 
@@ -99,7 +104,8 @@ static void spr(SDL_Renderer *r, int id, int col, int row, int vrow, double x, d
     SDL_FRect dst = { (float)(x - s->w * sc / 2), (float)(y - s->h * sc / 2), (float)(s->w * sc), (float)(s->h * sc) };
     SDL_SetTextureBlendMode(t, additive ? SDL_BLENDMODE_ADD : SDL_BLENDMODE_BLEND);
     SDL_SetTextureAlphaMod(t, (Uint8)(alpha < 0 ? 0 : alpha > 1 ? 255 : alpha * 255));
-    SDL_SetTextureColorMod(t, (Uint8)(cr * 255), (Uint8)(cg * 255), (Uint8)(cb * 255));
+    if (additive && hdr_gain > 1.0f) SDL_SetTextureColorModFloat(t, (float)cr * hdr_gain, (float)cg * hdr_gain, (float)cb * hdr_gain);   /* glow and sparkle go past white on an HDR display */
+    else SDL_SetTextureColorMod(t, (Uint8)(cr * 255), (Uint8)(cg * 255), (Uint8)(cb * 255));
     SDL_RenderTextureRotated(r, t, &src, &dst, rot, NULL, SDL_FLIP_NONE);
 }
 #define SPR(r, id, x, y) spr(r, id, 0, 0, 0, x, y, 0, 1, 1, 0, 1, 1, 1)
@@ -281,11 +287,53 @@ static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet
 /* ---------- frame ---------- */
 #include "menus.h"
 
+/* ---------- renderer and HDR state ---------- */
+static int hdr_possible = 1;                                /* 0 once a renderer would not give us linear output (no HDR backend on this system) */
+static SDL_Renderer *make_renderer(SDL_Window *win, int want_hdr) {
+    SDL_Renderer *r = NULL;
+    if (want_hdr && hdr_possible) {
+        SDL_PropertiesID p = SDL_CreateProperties();
+        SDL_SetPointerProperty(p, SDL_PROP_RENDERER_CREATE_WINDOW_POINTER, win);
+        SDL_SetNumberProperty(p, SDL_PROP_RENDERER_CREATE_OUTPUT_COLORSPACE_NUMBER, SDL_COLORSPACE_SRGB_LINEAR);
+        SDL_SetNumberProperty(p, SDL_PROP_RENDERER_CREATE_PRESENT_VSYNC_NUMBER, 1);
+        r = SDL_CreateRendererWithProperties(p); SDL_DestroyProperties(p);
+        if (r && SDL_GetNumberProperty(SDL_GetRendererProperties(r), SDL_PROP_RENDERER_OUTPUT_COLORSPACE_NUMBER, SDL_COLORSPACE_SRGB) != SDL_COLORSPACE_SRGB_LINEAR) {
+            SDL_Log("hdr: renderer '%s' has no linear output, using SDR", SDL_GetRendererName(r)); SDL_DestroyRenderer(r); r = NULL; hdr_possible = 0;
+        } else if (!r) { SDL_Log("hdr: could not make an HDR renderer: %s", SDL_GetError()); hdr_possible = 0; }
+    }
+    if (!r) { r = SDL_CreateRenderer(win, NULL); if (r) SDL_SetRenderVSync(r, 1); }
+    if (!r) r = SDL_CreateRenderer(win, "software");
+    if (r) SDL_Log("renderer: %s%s", SDL_GetRendererName(r), want_hdr && hdr_possible ? " (linear output, HDR requested)" : "");
+    return r;
+}
+/* every frame: is the display in HDR mode right now, and how far above SDR white does it go? */
+static void hdr_poll(SDL_Renderer *r) {
+    SDL_PropertiesID p = SDL_GetRendererProperties(r);
+    int on = SV.hdr && SDL_GetBooleanProperty(p, SDL_PROP_RENDERER_HDR_ENABLED_BOOLEAN, false);
+    hdr_headroom = on ? SDL_GetFloatProperty(p, SDL_PROP_RENDERER_HDR_HEADROOM_FLOAT, 1.0f) : 1.0f;
+    hdr_active = on && hdr_headroom > 1.0f;
+    hdr_gain = hdr_active ? 1.0f + (fminf(hdr_headroom, 4.0f) - 1.0f) * 0.65f : 1.0f;
+}
+/* --hdrtest: a row of white patches at 1x, 1.5x, 2x, 3x and 4x SDR white. On an HDR display the patches step up in brightness until the display runs out. */
+static void draw_hdrtest(SDL_Renderer *r) {
+    static const float lv[] = { 1.0f, 1.5f, 2.0f, 3.0f, 4.0f };
+    SDL_SetRenderDrawColorFloat(r, 0.04f, 0.04f, 0.04f, 1.0f); SDL_RenderClear(r);
+    for (int i = 0; i < 5; i++) {
+        float v = lv[i];
+        SDL_SetRenderDrawColorFloat(r, v, v, v, 1.0f);
+        SDL_FRect q = { 30.0f, 40.0f + i * 70.0f, 260.0f, 56.0f }; SDL_RenderFillRect(r, &q);
+        char b[24]; snprintf(b, sizeof b, "%.1fX", (double)lv[i]);
+        tf_text(r, b, 160, 60.0 + i * 70.0, 3, 20, 20, 20);
+    }
+    char b[48]; snprintf(b, sizeof b, hdr_active ? "HDR ON PEAK %.1fX" : "SDR", (double)hdr_headroom);
+    tf_text(r, b, 160, 410, 2, 255, 224, 122);
+}
+
 /* ---------- screen orientation (tate) ----------
  * Standard: the 320x480 field is letterboxed in the window by SDL's logical size, and SDL turns mouse and finger positions into field
  * coordinates before we see them. Tate left / right: the field is drawn into a texture at its on-screen size, turned a quarter turn and
  * centred in the window; there is no logical size, so positions arrive as plain window positions and are turned back here. */
-static SDL_Texture *tgt; static int tgt_w, tgt_h, t_cx, t_cy, applied_orient = -1, applied_scale = -1, applied_int = -1;
+static SDL_Texture *tgt; static int tgt_hdr, tgt_w, tgt_h, t_cx, t_cy, applied_orient = -1, applied_scale = -1, applied_int = -1;
 static void orient_apply(SDL_Window *w, SDL_Renderer *rr) {
     int sm = SV.intscale ? 1 : 0;
     if (sm != applied_scale) {                          /* smooth or sharp: each texture keeps its own filter, so make them again */
@@ -309,6 +357,7 @@ static void orient_apply(SDL_Window *w, SDL_Renderer *rr) {
     applied_orient = SV.orient;
 }
 static void draw_current(SDL_Renderer *rr) {
+    if (hdrtest_mode) { draw_hdrtest(rr); return; }
     if (IJ.busy) { draw_import(rr); return; }
 #ifndef __ANDROID__
     if (need_data) { draw_drop_hint(rr); return; }
@@ -316,14 +365,15 @@ static void draw_current(SDL_Renderer *rr) {
     if (ui_mode == UI_PLAY) render(rr); else draw_menu(rr);
 }
 static void present_frame(SDL_Renderer *rr) {
+    hdr_poll(rr);
     if (!SV.orient) { draw_current(rr); SDL_RenderPresent(rr); return; }
     int ow, oh; SDL_GetCurrentRenderOutputSize(rr, &ow, &oh);
     double sc = fmin(ow / (double)PNJ_H, oh / (double)PNJ_W);                     /* the turned field is PNJ_H wide and PNJ_W tall */
     if (SV.intscale && sc >= 1) sc = floor(sc);
     int tw = (int)(PNJ_W * sc) & ~1, th = (int)(PNJ_H * sc) & ~1; if (tw < 2) tw = 2; if (th < 2) th = 2;
-    if (!tgt || tw != tgt_w || th != tgt_h) {
+    if (!tgt || tw != tgt_w || th != tgt_h || tgt_hdr != hdr_active) {
         if (tgt) SDL_DestroyTexture(tgt);
-        tgt = SDL_CreateTexture(rr, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, tw, th); tgt_w = tw; tgt_h = th;
+        tgt = SDL_CreateTexture(rr, hdr_active ? SDL_PIXELFORMAT_RGBA64_FLOAT : SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, tw, th); tgt_w = tw; tgt_h = th; tgt_hdr = hdr_active;
         if (tgt) SDL_SetTextureScaleMode(tgt, tex_sharp ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR);
     }
     if (!tgt || !SDL_SetRenderTarget(rr, tgt)) { draw_current(rr); SDL_RenderPresent(rr); return; }
@@ -492,7 +542,7 @@ static int selftest(int steps, uint32_t seed, const char *bmp, int stage, int le
 }
 
 int main(int argc, char *argv[]) {
-    int selftest_steps = 0; uint32_t seed = 0; const char *bmp = NULL; int st_arg = 0, lv_arg = 0; const char *pack_arg = NULL, *import_arg = NULL, *import_out = NULL; int packinfo = 0, audiotest = 0, start_fs = 0, cli_orient = -1, windowed = 0;
+    int selftest_steps = 0; uint32_t seed = 0; const char *bmp = NULL; int st_arg = 0, lv_arg = 0; const char *pack_arg = NULL, *import_arg = NULL, *import_out = NULL; int packinfo = 0, audiotest = 0, start_fs = 0, cli_orient = -1, windowed = 0, cli_hdr = -1;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--selftest") && i + 1 < argc) selftest_steps = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc) seed = (uint32_t)strtoul(argv[++i], 0, 10);
@@ -507,6 +557,9 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--audiotest")) audiotest = 1;
         else if (!strcmp(argv[i], "--fullscreen") || !strcmp(argv[i], "--tate")) start_fs = 1;
         else if (!strcmp(argv[i], "--windowed")) windowed = 1;
+        else if (!strcmp(argv[i], "--hdr")) cli_hdr = 1;
+        else if (!strcmp(argv[i], "--no-hdr")) cli_hdr = 0;
+        else if (!strcmp(argv[i], "--hdrtest")) { hdrtest_mode = 1; cli_hdr = 1; }
         else if (!strcmp(argv[i], "--orient") && i + 1 < argc) { const char *o = argv[++i]; cli_orient = !strcmp(o, "left") ? 1 : !strcmp(o, "right") ? 2 : 0; }
     }
 #ifdef _WIN32
@@ -553,15 +606,15 @@ int main(int argc, char *argv[]) {
     if (!win) { fprintf(stderr, "window: %s\n", SDL_GetError()); return 1; }
     if (!start_fs) SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_SetWindowMinimumSize(win, 240, 360);
-    SDL_Renderer *r = SDL_CreateRenderer(win, NULL);
-    if (!r) r = SDL_CreateRenderer(win, "software");
+    save_load(); if (cli_orient >= 0) SV.orient = cli_orient; if (cli_hdr >= 0) SV.hdr = cli_hdr;
+    int applied_hdr = SV.hdr;
+    SDL_Renderer *r = make_renderer(win, applied_hdr);
     if (!r) { fprintf(stderr, "renderer: %s\n", SDL_GetError()); return 1; }
-    SDL_SetRenderVSync(r, 1);
     SDL_SetRenderLogicalPresentation(r, PNJ_W, PNJ_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
     SDL_InitSubSystem(SDL_INIT_GAMEPAD);
     { int ng = 0; SDL_JoystickID *ids = SDL_GetGamepads(&ng); for (int i = 0; i < ng; i++) SDL_OpenGamepad(ids[i]); SDL_free(ids); }
 
-    srand((unsigned)SDL_GetTicks()); save_load(); if (cli_orient >= 0) SV.orient = cli_orient; ui_enter(UI_TITLE); orient_apply(win, r);
+    srand((unsigned)SDL_GetTicks()); ui_enter(UI_TITLE); orient_apply(win, r);
     need_data = !data_present();
 #ifndef __ANDROID__
     if (need_data) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Game data needed", DATA_HELP, win);
@@ -651,6 +704,13 @@ int main(int argc, char *argv[]) {
                 else touch_end();
                 break; }
             }
+        }
+        if (SV.hdr != applied_hdr) {                        /* HDR switched in Options: the output colorspace is fixed per renderer, so make a new one */
+            for (int i = 0; i < PNJ_NTEX; i++) { TEX[i] = 0; TEXW[i] = 0; }
+            tgt = NULL; tgt_w = tgt_h = 0; SDL_DestroyRenderer(r);
+            applied_hdr = SV.hdr; r = make_renderer(win, applied_hdr);
+            if (!r) { fprintf(stderr, "renderer: %s\n", SDL_GetError()); return 1; }
+            applied_orient = applied_scale = applied_int = -1; last = SDL_GetPerformanceCounter(); acc = 0;
         }
         if (IJ.busy) {
             if (IJ.done) {

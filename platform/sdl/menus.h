@@ -14,7 +14,8 @@ typedef struct { uint32_t magic; int sfx_on, mus_on; float sfx_vol, mus_vol; int
                  int key[ACT_N][2];          /* SDL keycodes, 0 = none */
                  int pad[ACT_N];             /* SDL controller buttons, -1 = none */
                  int touchui;                /* on-screen touch controls: 0 auto (follow the last input device), 1 always, 2 never */
-                 int intscale;               /* 0 smooth scaling, 1 whole-number scale with sharp pixels (desktop) */ } save_t;
+                 int intscale;               /* 0 smooth scaling, 1 whole-number scale with sharp pixels (desktop) */
+                 int hdr;                    /* 0 SDR output, 1 ask for HDR output (desktop; only does anything on an HDR display) */ } save_t;
 static save_t SV;
 
 /* The last kind of input the player used. It picks the prompt wording ("TOUCH SCREEN" or "PRESS ANYTHING") and, in AUTO, whether the
@@ -147,7 +148,7 @@ static void digits_right(SDL_Renderer *r, int v, double xr, double ytop) {
 
 /* ---------- hit regions (rebuilt every frame) ---------- */
 enum { H_NONE, H_TITLE, H_PLAY, H_RECORD, H_OPTION, H_BACK, H_PREV, H_NEXT, H_START, H_SFXT, H_MUST, H_SFXS, H_MUSS, H_CTRL, H_SNAP,
-       H_P_OPTION, H_P_EXIT, H_P_RESUME, H_OVER, H_HELP, H_ACH, H_P_HELP, H_QUIT, H_P_QUIT, H_ORIENT, H_KEYS, H_RESET, H_MATCH, H_TOUCHUI, H_SCALE, H_KEY0 };   /* H_KEY0 + row * 3 + slot: a binding box */
+       H_P_OPTION, H_P_EXIT, H_P_RESUME, H_OVER, H_HELP, H_ACH, H_P_HELP, H_QUIT, H_P_QUIT, H_ORIENT, H_KEYS, H_RESET, H_MATCH, H_TOUCHUI, H_SCALE, H_HDR, H_KEY0 };   /* H_KEY0 + row * 3 + slot: a binding box */
 #if !defined(__ANDROID__) && !defined(__IPHONEOS__)
 #define PNJ_HAS_QUIT 1      /* desktop only: phones quit through the system */
 #define PNJ_DESKTOP 1
@@ -370,8 +371,19 @@ static void draw_menu(SDL_Renderer *r) {
         ftext(r, SV.analog ? "ANALOG PAD" : "DIGITAL PAD", 30, 281, 15, 0xffffff, 1, 1);
         SPR(r, 66, 204, 274); hit_add(172, 252, 62, 44, H_CTRL);
         SPR(r, 67, 269, 274); hit_add(238, 252, 62, 44, H_CTRL);
+#ifdef PNJ_DESKTOP
+        if (SV.analog) { ftext(r, "ANALOG-STYLE VIRTUAL CONTROL PAD.", 14, 316, 8, 0xcccccc, 1, 1); ftext(r, "THE SLIDE BAR RESPONDS ANYWHERE.", 14, 330, 8, 0xcccccc, 1, 1); }
+        else ftext(r, "DIGITAL-STYLE VIRTUAL CONTROL PAD.", 14, 322, 8, 0xcccccc, 1, 1);
+        { char hb[40];
+          btn(r, SV.hdr ? "HDR ON" : "HDR OFF", 14, 338, 100, 30, H_HDR, SV.hdr ? 0xffe07a : menu_fill(H_HDR, 0xb4b4d2), 10, 0);
+          if (!SV.hdr) snprintf(hb, sizeof hb, "SDR OUTPUT");
+          else if (hdr_active) snprintf(hb, sizeof hb, "ACTIVE. PEAK X%.1f", (double)hdr_headroom);
+          else snprintf(hb, sizeof hb, "NO HDR DISPLAY FOUND");
+          ftext(r, hb, 124, 358, 8, 0xcccccc, 1, 1); }
+#else
         if (SV.analog) { ftext(r, "ANALOG-STYLE VIRTUAL CONTROL PAD.", 14, 328, 8, 0xcccccc, 1, 1); ftext(r, "THE SLIDE BAR RESPONDS ANYWHERE.", 14, 346, 8, 0xcccccc, 1, 1); }
         else ftext(r, "DIGITAL-STYLE VIRTUAL CONTROL PAD.", 14, 328, 8, 0xcccccc, 1, 1);
+#endif
         if (!SV.analog) {
             btn(r, SV.snappy ? "ON" : "OFF", 14, 373, 70, 38, H_SNAP, SV.snappy ? 0xffe07a : 0x777777, 13, 0);
             ftext(r, "SNAPPY DIGITAL RESPONSE", 96, 396, 10, row_rgb(H_SNAP, 0xffffff), 1, 1);
@@ -481,6 +493,7 @@ static void ui_touch(double lx, double ly) {
         case H_KEYS: audio_play(A_DECIDE); ui_enter(UI_KEYS); break;
         case H_RESET: audio_play(A_CANCEL); ctl_defaults(&SV); save_write(); break;
         case H_SCALE: audio_play(A_SELECT); SV.intscale = !SV.intscale; save_write(); break;
+        case H_HDR: audio_play(A_SELECT); SV.hdr = !SV.hdr; save_write(); break;
         case H_TOUCHUI: SV.touchui = (SV.touchui + 1) % 3; audio_play(A_SELECT); save_write(); break;
         case H_MATCH: audio_play(A_DECIDE); ctl_match_screen(&SV, SV.orient); save_write(); break;
         case H_BACK:

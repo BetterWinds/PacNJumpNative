@@ -1,6 +1,18 @@
 # HDR and the SDL3 move
 
-Status: scoping only. Nothing here is built yet.
+Status: the desktop shell runs on SDL3 (branch `sdl3`, SDL 3.4.20 in `third_party/SDL3`) and there is a first HDR pass. The HDR part has only been compiled and run on a non-HDR display here. It needs a look on a real HDR screen. Android is still on SDL2 and is not on this branch.
+
+## What is in the branch
+
+- Options > HDR OFF/ON (desktop). It also saves, and `--hdr` / `--no-hdr` override it for one run. The line next to the button says SDR OUTPUT, ACTIVE with the display's peak, or NO HDR DISPLAY FOUND.
+- With HDR on, the renderer is made with a linear output colorspace. SDL then scales ordinary drawing to the display's SDR white by itself, so the game should look the same as before. Colors above 1.0 are allowed.
+- Glow and sparkle sprites (everything drawn additively) get pushed past white: gain is 1 + 0.65 x (min(peak, 4) - 1).
+- Tate with HDR draws into a float texture so the highlights survive the turn.
+- If the renderer will not give linear output (OpenGL, software), the game falls back to SDR and says so in the Options line.
+- `pacnjump --hdrtest` shows white patches at 1x, 1.5x, 2x, 3x and 4x SDR white. On an HDR display they should keep getting brighter until the display runs out.
+
+SDL3's own docs say the Direct3D 11, Direct3D 12 and Metal renderers support the linear output (the source also has it in Vulkan and GPU). Windows will pick Direct3D 11.
+
 
 ## Why SDL3
 
