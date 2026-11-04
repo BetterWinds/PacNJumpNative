@@ -1,0 +1,81 @@
+# Desktop build (Windows, macOS, Linux). The Android build is separate: android/ (Gradle + CMake).
+#   cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
+# SDL2 comes from the submodule in third_party/SDL when it has been checked out (static link, one self-contained binary),
+# otherwise from the system (find_package). Force the system one with -DPNJ_SYSTEM_SDL=ON.
+cmake_minimum_required(VERSION 3.16)
+project(pacnjump C)
+
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+option(PNJ_SYSTEM_SDL "Use the system SDL2 even if third_party/SDL is present" OFF)
+option(PNJ_BYO "No game data compiled in: maps are read from pnj.pack" ON)
+
+set(PNJ_SDL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL")
+if(NOT PNJ_SYSTEM_SDL AND EXISTS "${PNJ_SDL_DIR}/CMakeLists.txt")
+  set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+  set(SDL_STATIC ON CACHE BOOL "" FORCE)
+  set(SDL_TEST OFF CACHE BOOL "" FORCE)
+  set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
+  add_subdirectory("${PNJ_SDL_DIR}" SDL2-build EXCLUDE_FROM_ALL)
+  set(PNJ_SDL_LIBS SDL2::SDL2main SDL2::SDL2-static)
+  message(STATUS "SDL2: bundled (third_party/SDL), static")
+else()
+  find_package(SDL2 REQUIRED)
+  if(TARGET SDL2::SDL2)
+    set(PNJ_SDL_LIBS SDL2::SDL2main SDL2::SDL2)
+  else()
+    set(PNJ_SDL_LIBS ${SDL2_LIBRARIES})
+    include_directories(${SDL2_INCLUDE_DIRS})
+  endif()
+  message(STATUS "SDL2: system")
+endif()
+
+set(PNJ_SOURCES core/pnj_core.c platform/sdl/main.c platform/sdl/jingle_native.c platform/sdl/aac_dec.c)
+if(WIN32)
+  add_executable(pacnjump WIN32 ${PNJ_SOURCES})       # no console window; main.c re-attaches to the parent console for CLI output
+else()
+  add_executable(pacnjump ${PNJ_SOURCES})
+endif()
+target_include_directories(pacnjump PRIVATE core third_party/stb)
+# Version string shown in the window title, "--version" and the PNJ_HITS overlay. CI passes -DPNJ_VERSION=...; otherwise git describe.
+if(NOT PNJ_VERSION)
+  execute_process(COMMAND git describe --tags --always --dirty WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} OUTPUT_VARIABLE PNJ_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+endif()
+if(NOT PNJ_VERSION)
+  set(PNJ_VERSION dev)
+endif()
+target_compile_definitions(pacnjump PRIVATE PNJ_VERSION="${PNJ_VERSION}")
+message(STATUS "version ${PNJ_VERSION}")
+if(PNJ_BYO)
+  target_compile_definitions(pacnjump PRIVATE PNJ_BYO=1)
+endif()
+if(MSVC)
+  target_compile_options(pacnjump PRIVATE /fp:precise /wd4996)
+else()
+  target_compile_options(pacnjump PRIVATE -ffp-contract=off)   # same double results as the JS reference
+  target_link_libraries(pacnjump PRIVATE m)
+  if(WIN32)
+    target_link_options(pacnjump PRIVATE -static)               # MinGW: no libgcc/winpthread DLLs next to the exe
+  endif()
+endif()
+target_link_libraries(pacnjump PRIVATE ${PNJ_SDL_LIBS})
+if(WIN32)
+  target_link_libraries(pacnjump PRIVATE mfuuid ole32)         # GUID definitions only; Media Foundation itself is loaded at run time (jingle_native.c)
+endif()
+if(APPLE)
+  target_link_libraries(pacnjump PRIVATE "-framework AudioToolbox" "-framework CoreFoundation")
+endif()
+set_target_properties(pacnjump PROPERTIES OUTPUT_NAME "pacnjump")
+
+if(APPLE)
+  # `cmake --build build --target bundle` makes build/PacNJump.app (unsigned)
+  set(PNJ_APP "${CMAKE_BINARY_DIR}/PacNJump.app")
+  add_custom_target(bundle ALL DEPENDS pacnjump
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PNJ_APP}/Contents/MacOS" "${PNJ_APP}/Contents/Resources"
+    COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:pacnjump>" "${PNJ_APP}/Contents/MacOS/pacnjump"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/platform/sdl/Info.plist" "${PNJ_APP}/Contents/Info.plist")
+endif()

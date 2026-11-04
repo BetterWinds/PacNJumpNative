@@ -1,0 +1,53 @@
+# Builds the Android app template (no game data, unsigned) and publishes web/ (the APK builder page) to GitHub Pages.
+# Needs Settings > Pages > Source = "GitHub Actions". Nothing to build or commit by hand.
+name: Pages
+on:
+  push:
+    branches: [main]
+    paths: ['web/**', 'android/**', 'core/**', 'platform/**', 'third_party/**', 'CMakeLists.txt', '.github/workflows/pages.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  template:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17', cache: gradle }
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - name: Build the template
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew -PBYO -PUNSIGNED --no-daemon assembleRelease
+      - name: Copy it to web/ and check it has no game data
+        run: |
+          cp android/app/build/outputs/apk/release/PacNJump-byo-template-*-release.apk web/template.apk
+          test "$(stat -c %s web/template.apk)" -gt 100000 || { echo "template.apk is too small, the build failed"; exit 1; }
+          if unzip -l web/template.apk | grep -qE "assets/(sysparts\.png|pnj\.pack)"; then echo "template.apk contains game data, refusing to publish"; exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with: { name: template-apk, path: web/template.apk }
+  deploy:
+    needs: template
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: template-apk, path: web }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deployment
+        uses: actions/deploy-pages@v4

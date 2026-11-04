@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pac'N-Jump for Android: build your APK</title>
+<style>
+  :root { --bg:#10131c; --card:#181d2b; --line:#2a3148; --text:#e8ebf4; --dim:#9aa3bd; --accent:#ffd60a; --ok:#5fd38d; --bad:#ff6b6b; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f4f5f9; --card:#fff; --line:#d8dce8; --text:#171b28; --dim:#5b6480; --accent:#b8860b; --ok:#1a8f4a; --bad:#c62828; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:26px; margin:0 0 8px; }
+  h2 { font-size:17px; margin:32px 0 8px; }
+  p { margin:8px 0; color:var(--dim); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin-top:20px; }
+  #drop { border:2px dashed var(--line); border-radius:12px; padding:36px 16px; text-align:center; cursor:pointer; color:var(--dim); }
+  #drop.over { border-color:var(--accent); color:var(--text); }
+  #drop strong { color:var(--text); display:block; font-size:18px; margin-bottom:4px; }
+  input[type=file] { display:none; }
+  ul.log { list-style:none; margin:16px 0 0; padding:0; color:var(--dim); font-size:15px; }
+  ul.log li::before { content:"\2713  "; color:var(--ok); }
+  #msg { margin-top:12px; min-height:1.5em; }
+  #msg.err { color:var(--bad); }
+  a.btn, button { display:inline-block; background:var(--accent); color:#1a1400; border:0; border-radius:8px; padding:12px 20px; font-weight:600; font-size:16px; font-family:inherit; text-decoration:none; cursor:pointer; margin-top:12px; }
+  a.btn[hidden] { display:none; }
+  ol { color:var(--dim); padding-left:22px; } ol li { margin:6px 0; }
+  code { background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:1px 5px; font-size:14px; }
+  details { margin-top:12px; color:var(--dim); } summary { cursor:pointer; color:var(--text); }
+  .small { font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pac'N-Jump for Android</h1>
+  <p>The 2011 game was pulled from the stores. This is a rebuilt version that runs on current Android phones. It ships with none of the original art or sound: you give it your own copy of the original Android APK, and this page builds an installable app from it.</p>
+  <p>Everything happens in your browser. Your APK is not uploaded anywhere.</p>
+
+  <div class="card">
+    <div id="drop" tabindex="0" role="button" aria-label="Choose the original Pac'N-Jump APK">
+      <strong>Drop your original Pac'N-Jump APK here</strong>
+      or tap to choose the file
+    </div>
+    <input id="file" type="file" accept=".apk,application/vnd.android.package-archive,application/octet-stream">
+    <ul class="log" id="log"></ul>
+    <div id="msg"></div>
+    <a id="dl" class="btn" hidden>Download PacNJump.apk</a>
+  </div>
+
+  <h2>Installing it</h2>
+  <ol>
+    <li>Needs a 64-bit Android phone running Android 7.0 or newer.</li>
+    <li>Download the APK on the phone (or copy it over). Open it from your Files app or the browser's download list.</li>
+    <li>Android will ask you to allow installs from that app (Files, Chrome, whichever opened it). Turn that on for it once.</li>
+    <li>If Play Protect warns about an app it hasn't seen, tap More details, then Install anyway.</li>
+  </ol>
+  <details class="small"><summary>Notes</summary>
+    <p>The app is signed with a key this page creates and keeps in your browser. Building again in the same browser gives an APK that updates the installed one. A different browser makes a different key, so uninstall the old copy first.</p>
+    <p>The power-up jingle is skipped (it needs an audio converter this page doesn't have). The stage music keeps playing instead.</p>
+    <p>The source for the game and this page is in the repository. This is a fan project and is not affiliated with Namco or Bandai Namco.</p>
+  </details>
+</main>
+<script type="module">
+import { buildApk } from './builder.js';
+const $ = (id) => document.getElementById(id);
+const drop = $('drop'), file = $('file'), logEl = $('log'), msg = $('msg'), dl = $('dl');
+let template = null, busy = false, url = null;
+
+fetch('template.apk').then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+  .then((b) => { template = new Uint8Array(b); })
+  .catch(() => { msg.className = 'err'; msg.textContent = 'The app template could not be loaded, so nothing can be built right now.'; });
+
+const log = (m) => { const li = document.createElement('li'); li.textContent = m; logEl.appendChild(li); };
+async function run(f) {
+  if (busy || !f) return;
+  if (!template) { msg.className = 'err'; msg.textContent = 'The app template is not loaded yet.'; return; }
+  busy = true; logEl.textContent = ''; msg.className = ''; msg.textContent = 'Working...'; dl.hidden = true;
+  if (url) { URL.revokeObjectURL(url); url = null; }
+  try {
+    const orig = new Uint8Array(await f.arrayBuffer());
+    const out = await buildApk(orig, template, log);
+    url = URL.createObjectURL(new Blob([out], { type: 'application/vnd.android.package-archive' }));
+    dl.href = url; dl.download = 'PacNJump.apk'; dl.hidden = false;
+    msg.textContent = 'Done. ' + (out.length / 1048576).toFixed(1) + ' MB.';
+  } catch (e) { msg.className = 'err'; msg.textContent = e.message || String(e); }
+  busy = false;
+}
+drop.addEventListener('click', () => file.click());
+drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); } });
+file.addEventListener('change', () => { run(file.files[0]); file.value = ''; });
+['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', (e) => run(e.dataTransfer.files[0]));
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => e.preventDefault());
+</script>
+</body>
+</html>

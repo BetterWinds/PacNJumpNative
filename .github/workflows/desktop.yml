@@ -1,0 +1,110 @@
+# Builds the desktop port for Linux, Windows and macOS (SDL2 from the third_party/SDL submodule, linked statically).
+# Binaries contain no game data. Push a tag like v0.1 to attach them to a GitHub release.
+name: Desktop
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['web/**', 'android/**', '*.md']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Version
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = tag ]; then v="${{ github.ref_name }}"; else v="b${{ github.run_number }}-${GITHUB_SHA::7}"; fi
+          echo "PNJ_VERSION=$v" >> "$GITHUB_ENV"
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev \
+            libwayland-dev libdrm-dev libgbm-dev libgl1-mesa-dev libegl1-mesa-dev libpulse-dev libasound2-dev libudev-dev libdbus-1-dev
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPNJ_VERSION=$PNJ_VERSION
+          cmake --build build
+          strip build/pacnjump
+      - name: Package
+        run: |
+          mkdir -p out/pacnjump-linux-x64
+          cp build/pacnjump packaging/README-desktop.txt LICENSE out/pacnjump-linux-x64/
+          tar -C out -czf pacnjump-linux-x64.tar.gz pacnjump-linux-x64
+      - uses: actions/upload-artifact@v4
+        with: { name: "pacnjump-linux-x64-${{ env.PNJ_VERSION }}", path: pacnjump-linux-x64.tar.gz }
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Version
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = tag ]; then v="${{ github.ref_name }}"; else v="b${{ github.run_number }}-${GITHUB_SHA::7}"; fi
+          echo "PNJ_VERSION=$v" >> "$GITHUB_ENV"
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja zip
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPNJ_VERSION=$PNJ_VERSION
+          cmake --build build
+          strip build/pacnjump.exe
+      - name: Package
+        run: |
+          mkdir -p out/pacnjump-windows-x64
+          cp build/pacnjump.exe packaging/README-desktop.txt LICENSE out/pacnjump-windows-x64/
+          cd out && zip -r ../pacnjump-windows-x64.zip pacnjump-windows-x64
+      - uses: actions/upload-artifact@v4
+        with: { name: "pacnjump-windows-x64-${{ env.PNJ_VERSION }}", path: pacnjump-windows-x64.zip }
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Version
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = tag ]; then v="${{ github.ref_name }}"; else v="b${{ github.run_number }}-${GITHUB_SHA::7}"; fi
+          echo "PNJ_VERSION=$v" >> "$GITHUB_ENV"
+      - name: Build universal (Apple silicon and Intel)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 -DPNJ_VERSION=$PNJ_VERSION
+          cmake --build build --target bundle
+      - name: Package
+        run: |
+          mkdir -p out/pacnjump-macos
+          codesign -s - --force --deep build/PacNJump.app
+          cp -R build/PacNJump.app out/pacnjump-macos/
+          cp packaging/README-desktop.txt LICENSE out/pacnjump-macos/
+          cd out && ditto -c -k --keepParent pacnjump-macos ../pacnjump-macos.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: "pacnjump-macos-${{ env.PNJ_VERSION }}", path: pacnjump-macos.zip }
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dl, merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            Desktop builds. Unzip, run, then drag your own Pac'N-Jump Android APK onto the window once.
+
+            **macOS:** the app is not signed, so the first launch is blocked. On macOS 15 and later: double-click it, click Done, open System Settings > Privacy & Security, scroll to Security, click Open Anyway, enter your password, click Open. On macOS 14 and earlier: right-click the app, Open, Open. If macOS says the app is damaged, run `xattr -cr PacNJump.app` in Terminal. Details are in the README inside the zip.
+          files: dl/*

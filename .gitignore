@@ -1,0 +1,23 @@
+# Nothing from the original game goes in this repo: art, sound, maps, the APK, or anything derived from them.
+assets/
+proto/
+*.apk
+*.ipa
+*.pack
+*.3gp
+core/pnj_maps_data.h
+
+# build output and local files
+build/
+dist/
+run/
+*.bak*
+*.o
+android/local.properties
+android/.gradle/
+android/.idea/
+android/build/
+android/app/build/
+android/app/.cxx/
+web/template.apk
+__pycache__/

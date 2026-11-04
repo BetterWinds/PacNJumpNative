@@ -1,0 +1,75 @@
+def buildAsLibrary = project.hasProperty('BUILD_AS_LIBRARY');
+def buildAsApplication = !buildAsLibrary
+if (buildAsApplication) {
+    apply plugin: 'com.android.application'
+}
+else {
+    apply plugin: 'com.android.library'
+}
+
+android {
+    if (buildAsApplication) {
+        namespace "org.libsdl.app"
+    }
+    compileSdkVersion 34
+    defaultConfig {
+        applicationId "com.jon.pnjnative"
+        minSdkVersion 21
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0"
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_APP_PLATFORM=android-21", "-DANDROID_STL=c++_static", "-DPNJ_BYO=" + (project.hasProperty('BYO') ? "ON" : "OFF")
+                abiFilters 'arm64-v8a'   // add 'armeabi-v7a' for old 32-bit phones
+            }
+        }
+    }
+    sourceSets {
+        main {
+            if (!project.hasProperty('BYO')) assets.srcDir '../../assets'   // native/assets bundled into the APK (personal build). -PBYO = bring-your-own-APK build: no game data inside
+        }
+    }
+    buildTypes {
+        release {
+            if (!project.hasProperty('UNSIGNED')) signingConfig signingConfigs.debug   // sideload build: signed with the local debug key (keep that key to update in place). -PUNSIGNED = template for the web builder, which signs it itself
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    applicationVariants.all { variant ->
+        variant.outputs.all { outputFileName = "PacNJump${project.hasProperty('BYO') ? '-byo' : ''}${project.hasProperty('UNSIGNED') ? '-template' : ''}-${variant.versionName}-${variant.buildType.name}.apk" }
+        tasks["merge${variant.name.capitalize()}Assets"]
+            .dependsOn("externalNativeBuild${variant.name.capitalize()}")
+    }
+    if (!project.hasProperty('EXCLUDE_NATIVE_LIBS')) {
+        sourceSets.main {
+            jniLibs.srcDir 'libs'
+        }
+        externalNativeBuild {
+            cmake {
+                path 'jni/CMakeLists.txt'
+            }
+        }
+       
+    }
+    lint {
+        abortOnError false
+    }
+
+    if (buildAsLibrary) {
+        libraryVariants.all { variant ->
+            variant.outputs.each { output ->
+                def outputFile = output.outputFile
+                if (outputFile != null && outputFile.name.endsWith(".aar")) {
+                    def fileName = "org.libsdl.app.aar";
+                    output.outputFile = new File(outputFile.parent, fileName);
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+}
