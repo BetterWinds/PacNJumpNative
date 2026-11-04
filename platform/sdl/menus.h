@@ -375,18 +375,23 @@ static void draw_menu(SDL_Renderer *r) {
         if (SV.analog) { ftext(r, "ANALOG-STYLE VIRTUAL CONTROL PAD.", 14, 316, 8, 0xcccccc, 1, 1); ftext(r, "THE SLIDE BAR RESPONDS ANYWHERE.", 14, 330, 8, 0xcccccc, 1, 1); }
         else ftext(r, "DIGITAL-STYLE VIRTUAL CONTROL PAD.", 14, 322, 8, 0xcccccc, 1, 1);
         { char hb[40];
-          btn(r, SV.hdr ? "HDR ON" : "HDR OFF", 14, 338, 100, 30, H_HDR, SV.hdr ? 0xffe07a : menu_fill(H_HDR, 0xb4b4d2), 10, 0);
+          btn(r, SV.hdr ? "HDR ON" : "HDR OFF", 14, 378, 100, 30, H_HDR, SV.hdr ? 0xffe07a : menu_fill(H_HDR, 0xb4b4d2), 10, 0);
           if (!SV.hdr) snprintf(hb, sizeof hb, "SDR OUTPUT");
           else if (hdr_active) snprintf(hb, sizeof hb, "ACTIVE. PEAK X%.1f", (double)hdr_headroom);
           else snprintf(hb, sizeof hb, "NO HDR DISPLAY FOUND");
-          ftext(r, hb, 124, 358, 8, 0xcccccc, 1, 1); }
+          ftext(r, hb, 124, 398, 8, 0xcccccc, 1, 1); }
 #else
         if (SV.analog) { ftext(r, "ANALOG-STYLE VIRTUAL CONTROL PAD.", 14, 328, 8, 0xcccccc, 1, 1); ftext(r, "THE SLIDE BAR RESPONDS ANYWHERE.", 14, 346, 8, 0xcccccc, 1, 1); }
         else ftext(r, "DIGITAL-STYLE VIRTUAL CONTROL PAD.", 14, 328, 8, 0xcccccc, 1, 1);
 #endif
         if (!SV.analog) {
-            btn(r, SV.snappy ? "ON" : "OFF", 14, 373, 70, 38, H_SNAP, SV.snappy ? 0xffe07a : 0x777777, 13, 0);
-            ftext(r, "SNAPPY DIGITAL RESPONSE", 96, 396, 10, row_rgb(H_SNAP, 0xffffff), 1, 1);
+#ifdef PNJ_DESKTOP
+            const int sy = 334;                                   /* desktop: snappy above the HDR row */
+#else
+            const int sy = 373;
+#endif
+            btn(r, SV.snappy ? "ON" : "OFF", 14, sy, 70, 38, H_SNAP, SV.snappy ? 0xffe07a : 0x777777, 13, 0);
+            ftext(r, "SNAPPY DIGITAL RESPONSE", 96, sy + 23, 10, row_rgb(H_SNAP, 0xffffff), 1, 1);
         }
         backbtn(r);
 #ifdef PNJ_DESKTOP
