@@ -37,7 +37,7 @@ static SDL_Texture *TEX[PNJ_NTEX];
 /* HDR output (desktop). The renderer is made with a linear output colorspace when the HDR option is on. SDL then scales ordinary (SDR) drawing to
  * the display's SDR white level by itself, so the picture looks the same as before, and colors above 1.0 are free to go brighter than white.
  * hdr_gain is how much brighter glow and sparkle sprites are pushed (1.0 = not at all). */
-static int hdr_active; static float hdr_headroom = 1.0f, hdr_gain = 1.0f;
+static int hdr_active; static float hdr_headroom = 1.0f, hdr_gain = 1.0f, hdr_play = 1.0f;   /* hdr_play: the gain used in gameplay; menus and the background get none */
 static int hdrtest_mode;                                    /* --hdrtest: show the brightness patches instead of the game */
 static int tex_sharp;                                      /* 1: nearest-neighbour scaling (Options > SCALE > PIXEL), 0: linear */
 static int TEXW[PNJ_NTEX];
@@ -135,7 +135,9 @@ static void draw_bg(SDL_Renderer *r) {
     } else {
         a = (G.stage == 7 || G.stage == 5) ? 1 : s;
     }
+    float g = hdr_gain; hdr_gain = 1.0f;                       /* the background keeps its normal brightness; only the foreground glow goes past white */
     for (int i = 0; i < n; i++) spr(r, id, 0, 0, 0, 160, ys[i] + hh / 2.0, 0, 1, a, add, cr, cg, cb);
+    hdr_gain = g;
 }
 
 /* ---------- HUD ---------- */
@@ -312,7 +314,8 @@ static void hdr_poll(SDL_Renderer *r) {
     int on = SV.hdr && SDL_GetBooleanProperty(p, SDL_PROP_RENDERER_HDR_ENABLED_BOOLEAN, false);
     hdr_headroom = on ? SDL_GetFloatProperty(p, SDL_PROP_RENDERER_HDR_HEADROOM_FLOAT, 1.0f) : 1.0f;
     hdr_active = on && hdr_headroom > 1.0f;
-    hdr_gain = hdr_active ? 1.0f + (fminf(hdr_headroom, 4.0f) - 1.0f) * 0.65f : 1.0f;
+    hdr_play = hdr_active ? 1.0f + (fminf(hdr_headroom, 4.0f) - 1.0f) * 0.85f : 1.0f;
+    hdr_gain = hdr_play;
 }
 /* --hdrtest: a row of white patches at 1x, 1.5x, 2x, 3x and 4x SDR white. On an HDR display the patches step up in brightness until the display runs out. */
 static void draw_hdrtest(SDL_Renderer *r) {
@@ -362,6 +365,7 @@ static void draw_current(SDL_Renderer *rr) {
 #ifndef __ANDROID__
     if (need_data) { draw_drop_hint(rr); return; }
 #endif
+    hdr_gain = ui_mode == UI_PLAY ? hdr_play : 1.0f;            /* the glow effect is for gameplay, not the menus */
     if (ui_mode == UI_PLAY) render(rr); else draw_menu(rr);
 }
 static void present_frame(SDL_Renderer *rr) {
