@@ -709,6 +709,8 @@ int main(int argc, char *argv[]) {
                 break; }
             }
         }
+        fs_state = (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) != 0;
+        if (fs_req) { fs_req = 0; SDL_SetWindowFullscreen(win, !fs_state); }
         if (SV.hdr != applied_hdr) {                        /* HDR switched in Options: the output colorspace is fixed per renderer, so make a new one */
             for (int i = 0; i < PNJ_NTEX; i++) { TEX[i] = 0; TEXW[i] = 0; }
             tgt = NULL; tgt_w = tgt_h = 0; SDL_DestroyRenderer(r);

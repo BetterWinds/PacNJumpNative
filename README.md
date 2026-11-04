@@ -24,15 +24,16 @@ The app is not signed, so Gatekeeper blocks it the first time.
 
 ## Controls (desktop)
 
-- Keyboard: arrows or WASD, Enter or Space to select, P to pause, Esc to go back (quit on the title screen), R to restart, 1-8 to pick a stage, F11 or Alt+Enter for fullscreen. Everything except R, 1-8 and F11 can be remapped in Options > KEYS (two keys and one pad button per action).
+- Keyboard: arrows or WASD, Enter or Space to select, P to pause, Esc to go back (quit on the title screen), R to restart, 1-8 to pick a stage, F11 or Alt+Enter for fullscreen. Everything except R, 1-8 and F11 can be remapped in Options > Controls > KEYS (two keys and one pad button per action).
 - Mouse: click buttons, drag to steer.
 - Touch: one finger steers. Two fingers hold left and right like the phone's digital pad. Mac trackpads count as a mouse, not touch.
 - Gamepad: d-pad or left stick, A to confirm, B to go back, Start to pause.
 - Title and game over screens: any key, button, click or tap continues. The prompt says "TOUCH SCREEN" or "PRESS ANYTHING" depending on the last input you used.
-- On-screen pad and pause button: Options > TOUCH UI cycles AUTO, ON and OFF (all platforms). AUTO shows them after a tap or click and hides them once you use a key or pad button.
-- Tate: Options > SCREEN cycles STANDARD, TATE LEFT and TATE RIGHT (or start with `--orient standard|left|right`). It turns the picture 90 degrees on a normal landscape screen so you can tip the monitor over. TATE LEFT puts the top of the game on the left of your screen, TATE RIGHT on the right. Mouse and touch follow the turn. In Options > KEYS, MATCH SCREEN remaps the arrows to follow the turned picture and DEFAULTS puts them back. Use DEFAULTS if you rotate the display in your OS instead.
+- On-screen pad and pause button: Options > Controls > TOUCH UI cycles AUTO, ON and OFF (all platforms). AUTO shows them after a tap or click and hides them once you use a key or pad button.
+- Tate: Options > Video > SCREEN cycles STANDARD, TATE LEFT and TATE RIGHT (or start with `--orient standard|left|right`). It turns the picture 90 degrees on a normal landscape screen so you can tip the monitor over. TATE LEFT puts the top of the game on the left of your screen, TATE RIGHT on the right. Mouse and touch follow the turn. In Options > Controls > KEYS, MATCH SCREEN remaps the arrows to follow the turned picture and DEFAULTS puts them back. Use DEFAULTS if you rotate the display in your OS instead.
 - The window resizes and keeps the 2:3 portrait shape. `--fullscreen` starts fullscreen and `--windowed` forces a window. On a Steam Deck (Steam sets `SteamDeck`) it starts fullscreen by itself.
-- Options > SCALE: SMOOTH fills the window. PIXEL uses whole-number sizes only, so the dots stay sharp, and leaves black bars. It also works in tate.
+- Options is split into Sound, Video and Controls. Video has a fullscreen switch (also F11), SCREEN, SCALE and HDR.
+- Options > Video > SCALE: SMOOTH fills the window. PIXEL uses whole-number sizes only, so the dots stay sharp, and leaves black bars. It also works in tate.
 
 ## The web builder
 
