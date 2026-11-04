@@ -1,6 +1,6 @@
-# Desktop build (Windows, macOS, Linux). The Android build is separate: android/ (Gradle + CMake).
+# Desktop build (Windows, macOS, Linux). This branch is on SDL3; the Android project (android/) is still SDL2 and is not part of this branch yet.
 #   cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
-# SDL2 comes from the submodule in third_party/SDL when it has been checked out (static link, one self-contained binary),
+# SDL3 comes from the submodule in third_party/SDL3 when it has been checked out (static link, one self-contained binary),
 # otherwise from the system (find_package). Force the system one with -DPNJ_SYSTEM_SDL=ON.
 cmake_minimum_required(VERSION 3.16)
 project(pacnjump C)
@@ -11,27 +11,23 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-option(PNJ_SYSTEM_SDL "Use the system SDL2 even if third_party/SDL is present" OFF)
+option(PNJ_SYSTEM_SDL "Use the system SDL3 even if third_party/SDL3 is present" OFF)
 option(PNJ_BYO "No game data compiled in: maps are read from pnj.pack" ON)
 
-set(PNJ_SDL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL")
+set(PNJ_SDL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL3")
 if(NOT PNJ_SYSTEM_SDL AND EXISTS "${PNJ_SDL_DIR}/CMakeLists.txt")
   set(SDL_SHARED OFF CACHE BOOL "" FORCE)
   set(SDL_STATIC ON CACHE BOOL "" FORCE)
-  set(SDL_TEST OFF CACHE BOOL "" FORCE)
-  set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
-  add_subdirectory("${PNJ_SDL_DIR}" SDL2-build EXCLUDE_FROM_ALL)
-  set(PNJ_SDL_LIBS SDL2::SDL2main SDL2::SDL2-static)
-  message(STATUS "SDL2: bundled (third_party/SDL), static")
+  set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+  set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+  set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
+  add_subdirectory("${PNJ_SDL_DIR}" SDL3-build EXCLUDE_FROM_ALL)
+  set(PNJ_SDL_LIBS SDL3::SDL3-static)
+  message(STATUS "SDL3: bundled (third_party/SDL3), static")
 else()
-  find_package(SDL2 REQUIRED)
-  if(TARGET SDL2::SDL2)
-    set(PNJ_SDL_LIBS SDL2::SDL2main SDL2::SDL2)
-  else()
-    set(PNJ_SDL_LIBS ${SDL2_LIBRARIES})
-    include_directories(${SDL2_INCLUDE_DIRS})
-  endif()
-  message(STATUS "SDL2: system")
+  find_package(SDL3 REQUIRED CONFIG)
+  set(PNJ_SDL_LIBS SDL3::SDL3)
+  message(STATUS "SDL3: system")
 endif()
 
 set(PNJ_SOURCES core/pnj_core.c platform/sdl/main.c platform/sdl/jingle_native.c platform/sdl/aac_dec.c)

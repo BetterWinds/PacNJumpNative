@@ -28,17 +28,17 @@ static int in_dev = IND_KEY;
 static int touch_ui_on(void) { return SV.touchui == 1 || (SV.touchui == 0 && (in_dev == IND_TOUCH || in_dev == IND_MOUSE)); }
 static const char *touchui_name(int m) { return m == 1 ? "TOUCH UI ON" : m == 2 ? "TOUCH UI OFF" : "TOUCH UI AUTO"; }
 static void ctl_defaults(save_t *s) {
-    static const int k[ACT_N][2] = { { SDLK_LEFT, SDLK_a }, { SDLK_RIGHT, SDLK_d }, { SDLK_UP, SDLK_w }, { SDLK_DOWN, SDLK_s }, { SDLK_RETURN, SDLK_SPACE }, { SDLK_ESCAPE, 0 }, { SDLK_p, 0 } };
-    static const int b[ACT_N] = { SDL_CONTROLLER_BUTTON_DPAD_LEFT, SDL_CONTROLLER_BUTTON_DPAD_RIGHT, SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN,
-                                  SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_START };
+    static const int k[ACT_N][2] = { { SDLK_LEFT, SDLK_A }, { SDLK_RIGHT, SDLK_D }, { SDLK_UP, SDLK_W }, { SDLK_DOWN, SDLK_S }, { SDLK_RETURN, SDLK_SPACE }, { SDLK_ESCAPE, 0 }, { SDLK_P, 0 } };
+    static const int b[ACT_N] = { SDL_GAMEPAD_BUTTON_DPAD_LEFT, SDL_GAMEPAD_BUTTON_DPAD_RIGHT, SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN,
+                                  SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_START };
     memcpy(s->key, k, sizeof s->key); memcpy(s->pad, b, sizeof s->pad);
 }
 /* For a rotated picture on a screen that has not been turned: make the arrows and D-pad point the way the game moves. With the picture
    turned right (top edge faces right) game-left is screen-up; turned left it is screen-down. Game-up is screen-right / screen-left. */
 static void ctl_match_screen(save_t *s, int orient) {
     ctl_defaults(s); if (orient == 0) return;
-    static const int uk[4] = { SDLK_UP, SDLK_DOWN, SDLK_LEFT, SDLK_RIGHT }, wk[4] = { SDLK_w, SDLK_s, SDLK_a, SDLK_d };
-    static const int up[4] = { SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN, SDL_CONTROLLER_BUTTON_DPAD_LEFT, SDL_CONTROLLER_BUTTON_DPAD_RIGHT };
+    static const int uk[4] = { SDLK_UP, SDLK_DOWN, SDLK_LEFT, SDLK_RIGHT }, wk[4] = { SDLK_W, SDLK_S, SDLK_A, SDLK_D };
+    static const int up[4] = { SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN, SDL_GAMEPAD_BUTTON_DPAD_LEFT, SDL_GAMEPAD_BUTTON_DPAD_RIGHT };
     /* screen directions 0 up, 1 down, 2 left, 3 right; game LEFT, RIGHT, UP, DOWN take: */
     static const int right_turn[4] = { 0, 1, 3, 2 }, left_turn[4] = { 1, 0, 2, 3 };
     const int *m = orient == 2 ? right_turn : left_turn;
@@ -54,8 +54,8 @@ static int act_of_key(int k) {
 }
 static int act_of_pad(int b) { for (int a = 0; a < ACT_N; a++) if (SV.pad[a] == b) return a; return -1; }
 static int act_held(int a) {                              /* any key bound to the action is down right now */
-    const Uint8 *st = SDL_GetKeyboardState(NULL);
-    for (int i = 0; i < 2; i++) if (SV.key[a][i]) { SDL_Scancode sc = SDL_GetScancodeFromKey((SDL_Keycode)SV.key[a][i]); if (sc != SDL_SCANCODE_UNKNOWN && st[sc]) return 1; }
+    const bool *st = SDL_GetKeyboardState(NULL);
+    for (int i = 0; i < 2; i++) if (SV.key[a][i]) { SDL_Scancode sc = SDL_GetScancodeFromKey((SDL_Keycode)SV.key[a][i], NULL); if (sc != SDL_SCANCODE_UNKNOWN && st[sc]) return 1; }
     return 0;
 }
 static void ctl_key_name(int k, char *out, size_t n) {
@@ -69,12 +69,12 @@ static void ctl_key_name(int k, char *out, size_t n) {
 }
 static const char *ctl_pad_name(int b) {
     switch (b) {
-    case SDL_CONTROLLER_BUTTON_A: return "A"; case SDL_CONTROLLER_BUTTON_B: return "B"; case SDL_CONTROLLER_BUTTON_X: return "X"; case SDL_CONTROLLER_BUTTON_Y: return "Y";
-    case SDL_CONTROLLER_BUTTON_BACK: return "BACK"; case SDL_CONTROLLER_BUTTON_START: return "START";
-    case SDL_CONTROLLER_BUTTON_LEFTSTICK: return "L STICK"; case SDL_CONTROLLER_BUTTON_RIGHTSTICK: return "R STICK";
-    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: return "L1"; case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return "R1";
-    case SDL_CONTROLLER_BUTTON_DPAD_UP: return "D-UP"; case SDL_CONTROLLER_BUTTON_DPAD_DOWN: return "D-DOWN";
-    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: return "D-LEFT"; case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: return "D-RIGHT";
+    case SDL_GAMEPAD_BUTTON_SOUTH: return "A"; case SDL_GAMEPAD_BUTTON_EAST: return "B"; case SDL_GAMEPAD_BUTTON_WEST: return "X"; case SDL_GAMEPAD_BUTTON_NORTH: return "Y";
+    case SDL_GAMEPAD_BUTTON_BACK: return "BACK"; case SDL_GAMEPAD_BUTTON_START: return "START";
+    case SDL_GAMEPAD_BUTTON_LEFT_STICK: return "L STICK"; case SDL_GAMEPAD_BUTTON_RIGHT_STICK: return "R STICK";
+    case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: return "L1"; case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return "R1";
+    case SDL_GAMEPAD_BUTTON_DPAD_UP: return "D-UP"; case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return "D-DOWN";
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return "D-LEFT"; case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return "D-RIGHT";
     default: return b < 0 ? "-" : "BTN"; }
 }
 static int orient_dirty = 0;                                /* set when the screen orientation changed; main resizes the window */
@@ -104,11 +104,11 @@ static void sprdst(SDL_Renderer *r, int id, double dx, double dy, double dw, dou
     const pnj_sprite *s = spr_at(id);
     SDL_Texture *t = get_tex(r, s->tex); if (!t) return;
     double k = (double)TEXW[s->tex] / s->tw;
-    SDL_Rect src = { (int)(s->x * k + 0.5), (int)(s->y * k + 0.5), (int)(s->w * k + 0.5), (int)(s->h * k + 0.5) };
+    SDL_FRect src = { (int)(s->x * k + 0.5), (int)(s->y * k + 0.5), (int)(s->w * k + 0.5), (int)(s->h * k + 0.5) };
     SDL_FRect dst = { (float)dx, (float)dy, (float)dw, (float)dh };
     SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND); SDL_SetTextureAlphaMod(t, 255);
     SDL_SetTextureColorMod(t, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb);
-    SDL_RenderCopyF(r, t, &src, &dst);
+    SDL_RenderTexture(r, t, &src, &dst);
 }
 static void pill(SDL_Renderer *r, double x, double y, double w, int rgb) {
     sprdst(r, 62, x, y, 19, 38, rgb);
@@ -127,9 +127,9 @@ static void ftext(SDL_Renderer *r, const char *t, double x, double y, double siz
         int code = toupper((unsigned char)*c);
         if (code > 32 && code < 128) {
             int i = code - 32, cx = i % 16, cy = i / 16;
-            SDL_Rect src = { (int)(cx * 32 * k + 0.5), (int)(cy * 32 * k + 0.5), (int)(32 * k + 0.5), (int)(32 * k + 0.5) };
+            SDL_FRect src = { (int)(cx * 32 * k + 0.5), (int)(cy * 32 * k + 0.5), (int)(32 * k + 0.5), (int)(32 * k + 0.5) };
             SDL_FRect dst = { (float)(px - (cell - adv) / 2), (float)py, (float)cell, (float)cell };
-            SDL_RenderCopyF(r, tx, &src, &dst);
+            SDL_RenderTexture(r, tx, &src, &dst);
         }
         px += adv;
     }
@@ -137,7 +137,7 @@ static void ftext(SDL_Renderer *r, const char *t, double x, double y, double siz
 static void fill_rect(SDL_Renderer *r, double x, double y, double w, double h, int rgb, int a) {
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(r, (Uint8)(rgb >> 16), (Uint8)(rgb >> 8), (Uint8)rgb, (Uint8)a);
-    SDL_FRect f = { (float)x, (float)y, (float)w, (float)h }; SDL_RenderFillRectF(r, &f);
+    SDL_FRect f = { (float)x, (float)y, (float)w, (float)h }; SDL_RenderFillRect(r, &f);
 }
 static void shade(SDL_Renderer *r, int a) { fill_rect(r, 0, 0, PNJ_W, PNJ_H, 0, a); }
 static void digits_right(SDL_Renderer *r, int v, double xr, double ytop) {
@@ -283,9 +283,9 @@ static void draw_hits(SDL_Renderer *r) {   /* dev aid: PNJ_HITS=1 outlines every
     kb_track();
     if (!getenv("PNJ_HITS")) return;
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND); SDL_SetRenderDrawColor(r, 255, 0, 0, 255);
-    for (int i = 0; i < nhits; i++) { SDL_FRect f = { (float)hits[i].x, (float)hits[i].y, (float)hits[i].w, (float)hits[i].h }; SDL_RenderDrawRectF(r, &f); }
+    for (int i = 0; i < nhits; i++) { SDL_FRect f = { (float)hits[i].x, (float)hits[i].y, (float)hits[i].w, (float)hits[i].h }; SDL_RenderRect(r, &f); }
     SDL_SetRenderDrawColor(r, 0, 255, 0, 255);
-    SDL_RenderDrawLineF(r, (float)tap_x - 10, (float)tap_y, (float)tap_x + 10, (float)tap_y); SDL_RenderDrawLineF(r, (float)tap_x, (float)tap_y - 10, (float)tap_x, (float)tap_y + 10);
+    SDL_RenderLine(r, (float)tap_x - 10, (float)tap_y, (float)tap_x + 10, (float)tap_y); SDL_RenderLine(r, (float)tap_x, (float)tap_y - 10, (float)tap_x, (float)tap_y + 10);
     char b[96]; snprintf(b, sizeof b, "tap %d,%d", (int)tap_x, (int)tap_y);
     ftext(r, b, 160, 8, 8, 0x66ff66, 0, 1);
     ftext(r, PNJ_VERSION, 160, 8, 20, 0x66ff66, 0, 1);
@@ -506,7 +506,7 @@ static void ui_touch(double lx, double ly) {
         case H_P_OPTION: audio_play(A_DECIDE); opt_back = UI_PLAY; ui_enter(UI_OPTION); break;
         case H_P_EXIT: audio_play(A_CANCEL); paused = 0; ui_enter(UI_STAGES); break;
         case H_P_RESUME: audio_play(A_DECIDE); paused = 0; break;
-        case H_QUIT: case H_P_QUIT: { SDL_Event qe; SDL_zero(qe); qe.type = SDL_QUIT; SDL_PushEvent(&qe); break; }
+        case H_QUIT: case H_P_QUIT: { SDL_Event qe; SDL_zero(qe); qe.type = SDL_EVENT_QUIT; SDL_PushEvent(&qe); break; }
         case H_OVER: audio_play(A_DECIDE); ui_enter(UI_STAGES); break;
         default:
             if (h->id >= H_KEY0 && h->id < H_KEY0 + ACT_N * 3) { audio_play(A_SELECT); cap = h->id - H_KEY0; }

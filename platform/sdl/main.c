@@ -1,4 +1,4 @@
-/* Pac'N-Jump SDL2 shell: desktop and Android.
+/* Pac'N-Jump SDL3 shell: desktop (the Android project is still on the SDL2 branch).
  * Renders the core's draw list with the original sprite atlas (assets/ folder, bundled into the APK by Gradle),
  * the scrolling background and the HUD. Menus, pause screen and audio are not in the native build yet.
  *
@@ -9,7 +9,8 @@
  *   tap the pause button (top centre) to pause/resume
  *   desktop: arrows/A/D, mouse drag = analog, R restart, P pause, Esc quit
  */
-#include <SDL.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,6 +34,7 @@ static int touch_dir = 0;       /* digital touch: -1 left half, +1 right half */
 
 /* ---------- assets ---------- */
 static SDL_Texture *TEX[PNJ_NTEX];
+static int tex_sharp;                                      /* 1: nearest-neighbour scaling (Options > SCALE > PIXEL), 0: linear */
 static int TEXW[PNJ_NTEX];
 
 static void data_loaded(void);                          /* atlas and help text come from the pack; see below */
@@ -56,12 +58,12 @@ static unsigned char *read_asset(const char *name, size_t *size) {
     char path[256];
     for (int i = 0; prefixes[i]; i++) {
         snprintf(path, sizeof path, "%s%s", prefixes[i], name);
-        SDL_RWops *rw = SDL_RWFromFile(path, "rb");
+        SDL_IOStream *rw = SDL_IOFromFile(path, "rb");
         if (!rw) continue;
-        Sint64 n = SDL_RWsize(rw);
+        Sint64 n = SDL_GetIOSize(rw);
         unsigned char *buf = n > 0 ? (unsigned char *)malloc((size_t)n) : 0;
-        if (buf && SDL_RWread(rw, buf, 1, (size_t)n) == (size_t)n) { SDL_RWclose(rw); *size = (size_t)n; return buf; }
-        free(buf); SDL_RWclose(rw);
+        if (buf && SDL_ReadIO(rw, buf, (size_t)n) == (size_t)n) { SDL_CloseIO(rw); *size = (size_t)n; return buf; }
+        free(buf); SDL_CloseIO(rw);
     }
     return 0;
 }
@@ -78,7 +80,7 @@ static SDL_Texture *get_tex(SDL_Renderer *r, int i) {
     free(buf);
     if (!px) { TEXW[i] = -1; SDL_Log("missing texture %s", name); return 0; }
     SDL_Texture *t = SDL_CreateTexture(r, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, w, h);
-    if (t) { SDL_UpdateTexture(t, NULL, px, w * 4); SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND); }
+    if (t) { SDL_UpdateTexture(t, NULL, px, w * 4); SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND); SDL_SetTextureScaleMode(t, tex_sharp ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR); }
     stbi_image_free(px);
     TEX[i] = t; TEXW[i] = w;
     return t;
@@ -93,12 +95,12 @@ static void spr(SDL_Renderer *r, int id, int col, int row, int vrow, double x, d
     if (!t) return;
     double k = (double)TEXW[s->tex] / s->tw;
     int sx = s->x + col * (s->w + 2), sy = s->y + row * (s->h + 2) + vrow * s->h;
-    SDL_Rect src = { (int)(sx * k + 0.5), (int)(sy * k + 0.5), (int)(s->w * k + 0.5), (int)(s->h * k + 0.5) };
+    SDL_FRect src = { (int)(sx * k + 0.5), (int)(sy * k + 0.5), (int)(s->w * k + 0.5), (int)(s->h * k + 0.5) };
     SDL_FRect dst = { (float)(x - s->w * sc / 2), (float)(y - s->h * sc / 2), (float)(s->w * sc), (float)(s->h * sc) };
     SDL_SetTextureBlendMode(t, additive ? SDL_BLENDMODE_ADD : SDL_BLENDMODE_BLEND);
     SDL_SetTextureAlphaMod(t, (Uint8)(alpha < 0 ? 0 : alpha > 1 ? 255 : alpha * 255));
     SDL_SetTextureColorMod(t, (Uint8)(cr * 255), (Uint8)(cg * 255), (Uint8)(cb * 255));
-    SDL_RenderCopyExF(r, t, &src, &dst, rot, NULL, SDL_FLIP_NONE);
+    SDL_RenderTextureRotated(r, t, &src, &dst, rot, NULL, SDL_FLIP_NONE);
 }
 #define SPR(r, id, x, y) spr(r, id, 0, 0, 0, x, y, 0, 1, 1, 0, 1, 1, 1)
 #define RADIANS(d) ((d) * 3.14159265358979323846 / 180.0)
@@ -186,7 +188,7 @@ static int ends_apk(const char *s) { size_t l = strlen(s); return l > 4 && !SDL_
 static int import_start(const char *apk, const char *outpath, int rm);
 static void scan_for_apk(void) {                      /* Android: pick up any .apk copied into the app's own folder (each file is tried once) */
     static char tried[700];
-    const char *dir = SDL_AndroidGetExternalStoragePath(); if (!dir) return;
+    const char *dir = SDL_GetAndroidExternalStoragePath(); if (!dir) return;
     DIR *d = opendir(dir); if (!d) return;
     struct dirent *e; char p[700];
     while ((e = readdir(d))) if (ends_apk(e->d_name)) {
@@ -224,7 +226,7 @@ static void tf_text(SDL_Renderer *r, const char *s, double cx, double y, int sc,
     SDL_SetRenderDrawColor(r, R, G, B, 255);
     for (; *s; s++, x += 6 * sc) {
         for (size_t g = 0; g < sizeof TF / sizeof *TF; g++) if (TF[g].c == *s)
-            for (int ry = 0; ry < 7; ry++) for (int rx = 0; rx < 5; rx++) if (TF[g].r[ry] >> (4 - rx) & 1) { SDL_FRect q = { (float)(x + rx * sc), (float)(y + ry * sc), (float)sc, (float)sc }; SDL_RenderFillRectF(r, &q); }
+            for (int ry = 0; ry < 7; ry++) for (int rx = 0; rx < 5; rx++) if (TF[g].r[ry] >> (4 - rx) & 1) { SDL_FRect q = { (float)(x + rx * sc), (float)(y + ry * sc), (float)sc, (float)sc }; SDL_RenderFillRect(r, &q); }
     }
 }
 static struct { SDL_Thread *th; volatile int busy, done, ok; char apk[1100], out[700], err[240]; int rm; } IJ;
@@ -258,8 +260,8 @@ static void draw_import(SDL_Renderer *r) {                  /* 320x480 field coo
     int pm = imp_pm < 0 ? 0 : imp_pm > 1000 ? 1000 : imp_pm; char b[16];
     tf_text(r, "IMPORTING", 160, 150, 4, 255, 224, 122);
     tf_text(r, "GAME DATA", 160, 190, 4, 255, 224, 122);
-    SDL_SetRenderDrawColor(r, 200, 200, 210, 255); SDL_Rect o = { 40, 262, 240, 22 }; SDL_RenderDrawRect(r, &o);
-    SDL_SetRenderDrawColor(r, 255, 224, 122, 255); SDL_Rect f = { 43, 265, (234 * pm) / 1000, 16 }; SDL_RenderFillRect(r, &f);
+    SDL_SetRenderDrawColor(r, 200, 200, 210, 255); SDL_FRect o = { 40, 262, 240, 22 }; SDL_RenderRect(r, &o);
+    SDL_SetRenderDrawColor(r, 255, 224, 122, 255); SDL_FRect f = { 43, 265, (float)((234 * pm) / 1000), 16 }; SDL_RenderFillRect(r, &f);
     snprintf(b, sizeof b, "%d%%", pm / 10);
     tf_text(r, b, 160, 300, 3, 255, 255, 255);
     tf_text(r, imp_stage_name(imp_stage), 160, 340, 2, 170, 170, 190);
@@ -274,9 +276,8 @@ static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet
 }
 #endif
 
-/* Mouse and finger positions. The renderer has a logical size (SDL_RenderSetLogicalSize), and SDL's own event watch has already turned
- * mouse x/y into playfield coordinates and finger x/y into 0..1 across the playfield by the time the event reaches us. Converting again
- * (SDL_RenderWindowToLogical, or by hand) lands every tap in the wrong place, so these are used as they are. */
+/* Mouse and finger positions. SDL3 hands us window coordinates (fingers are 0..1 across the window) and leaves the conversion to the renderer's
+ * logical presentation to us, so every position goes through SDL_RenderCoordinatesFromWindow, or through tate_map when the picture is turned. */
 /* ---------- frame ---------- */
 #include "menus.h"
 
@@ -287,25 +288,25 @@ static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet
 static SDL_Texture *tgt; static int tgt_w, tgt_h, t_cx, t_cy, applied_orient = -1, applied_scale = -1, applied_int = -1;
 static void orient_apply(SDL_Window *w, SDL_Renderer *rr) {
     int sm = SV.intscale ? 1 : 0;
-    if (sm != applied_scale) {                          /* smooth or sharp: textures take the filter they were made with, so make them again */
-        SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, sm ? "0" : "1");
+    if (sm != applied_scale) {                          /* smooth or sharp: each texture keeps its own filter, so make them again */
+        tex_sharp = sm;
         for (int i = 0; i < PNJ_NTEX; i++) { if (TEX[i]) SDL_DestroyTexture(TEX[i]); TEX[i] = 0; TEXW[i] = 0; }
         if (tgt) SDL_DestroyTexture(tgt);
         tgt = NULL; tgt_w = tgt_h = 0; applied_scale = sm; applied_int = -1;
     }
-    if (applied_orient == SV.orient) {
-        int wi = sm && !SV.orient; if (wi != applied_int) { SDL_RenderSetIntegerScale(rr, wi ? SDL_TRUE : SDL_FALSE); applied_int = wi; }
-        return;
+    int wi = sm && !SV.orient;
+    if (applied_orient != SV.orient || applied_int != wi) {
+        if (SV.orient) SDL_SetRenderLogicalPresentation(rr, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
+        else SDL_SetRenderLogicalPresentation(rr, PNJ_W, PNJ_H, wi ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE : SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        applied_int = wi;
     }
-    applied_int = -1;
-    SDL_RenderSetLogicalSize(rr, SV.orient ? 0 : PNJ_W, SV.orient ? 0 : PNJ_H);
+    if (applied_orient == SV.orient) return;
     SDL_SetWindowMinimumSize(w, SV.orient ? 360 : 240, SV.orient ? 240 : 360);
-    if (!(SDL_GetWindowFlags(w) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP))) {
+    if (!(SDL_GetWindowFlags(w) & SDL_WINDOW_FULLSCREEN)) {
         int ww, wh; SDL_GetWindowSize(w, &ww, &wh);
         if ((SV.orient != 0) != (ww > wh)) SDL_SetWindowSize(w, wh, ww);
     }
     applied_orient = SV.orient;
-    { int wi = sm && !SV.orient; SDL_RenderSetIntegerScale(rr, wi ? SDL_TRUE : SDL_FALSE); applied_int = wi; }
 }
 static void draw_current(SDL_Renderer *rr) {
     if (IJ.busy) { draw_import(rr); return; }
@@ -316,27 +317,28 @@ static void draw_current(SDL_Renderer *rr) {
 }
 static void present_frame(SDL_Renderer *rr) {
     if (!SV.orient) { draw_current(rr); SDL_RenderPresent(rr); return; }
-    int ow, oh; SDL_GetRendererOutputSize(rr, &ow, &oh);
+    int ow, oh; SDL_GetCurrentRenderOutputSize(rr, &ow, &oh);
     double sc = fmin(ow / (double)PNJ_H, oh / (double)PNJ_W);                     /* the turned field is PNJ_H wide and PNJ_W tall */
     if (SV.intscale && sc >= 1) sc = floor(sc);
     int tw = (int)(PNJ_W * sc) & ~1, th = (int)(PNJ_H * sc) & ~1; if (tw < 2) tw = 2; if (th < 2) th = 2;
     if (!tgt || tw != tgt_w || th != tgt_h) {
         if (tgt) SDL_DestroyTexture(tgt);
         tgt = SDL_CreateTexture(rr, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, tw, th); tgt_w = tw; tgt_h = th;
+        if (tgt) SDL_SetTextureScaleMode(tgt, tex_sharp ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR);
     }
-    if (!tgt || SDL_SetRenderTarget(rr, tgt) != 0) { draw_current(rr); SDL_RenderPresent(rr); return; }
-    SDL_RenderSetScale(rr, tw / (float)PNJ_W, th / (float)PNJ_H);
+    if (!tgt || !SDL_SetRenderTarget(rr, tgt)) { draw_current(rr); SDL_RenderPresent(rr); return; }
+    SDL_SetRenderScale(rr, tw / (float)PNJ_W, th / (float)PNJ_H);
     draw_current(rr);
     SDL_SetRenderTarget(rr, NULL);
     SDL_SetRenderDrawColor(rr, 0, 0, 0, 255); SDL_RenderClear(rr);
     int x0 = (ow - tw) / 2, y0 = (oh - th) / 2; t_cx = x0 + tw / 2; t_cy = y0 + th / 2;
     SDL_FRect dst = { (float)x0, (float)y0, (float)tw, (float)th };
-    SDL_RenderCopyExF(rr, tgt, NULL, &dst, SV.orient == 2 ? 90.0 : -90.0, NULL, SDL_FLIP_NONE);
+    SDL_RenderTextureRotated(rr, tgt, NULL, &dst, SV.orient == 2 ? 90.0 : -90.0, NULL, SDL_FLIP_NONE);
     SDL_RenderPresent(rr);
 }
 /* window position (window units) -> field position */
 static void tate_map(SDL_Window *w, SDL_Renderer *rr, double x, double y, float *lx, float *ly) {
-    int ww = 1, wh = 1, ow = 1, oh = 1; SDL_GetWindowSize(w, &ww, &wh); SDL_GetRendererOutputSize(rr, &ow, &oh);
+    int ww = 1, wh = 1, ow = 1, oh = 1; SDL_GetWindowSize(w, &ww, &wh); SDL_GetCurrentRenderOutputSize(rr, &ow, &oh);
     if (ww < 1) ww = 1;
     if (wh < 1) wh = 1;
     double px = x * ow / ww, py = y * oh / wh, sx = tgt_w ? tgt_w / (double)PNJ_W : 1, sy = tgt_h ? tgt_h / (double)PNJ_H : 1;
@@ -344,28 +346,27 @@ static void tate_map(SDL_Window *w, SDL_Renderer *rr, double x, double y, float 
     if (SV.orient == 2) { *lx = (float)(PNJ_W / 2.0 + Y / sx); *ly = (float)(PNJ_H / 2.0 - X / sy); }     /* top of the field faces right */
     else { *lx = (float)(PNJ_W / 2.0 - Y / sx); *ly = (float)(PNJ_H / 2.0 + X / sy); }                      /* top faces left */
 }
-static void mouse_field(SDL_Window *w, SDL_Renderer *rr, int x, int y, float *lx, float *ly) {
-    if (SV.orient) tate_map(w, rr, x, y, lx, ly); else { *lx = (float)x; *ly = (float)y; }
+static void mouse_field(SDL_Window *w, SDL_Renderer *rr, float x, float y, float *lx, float *ly) {
+    if (SV.orient) tate_map(w, rr, x, y, lx, ly); else SDL_RenderCoordinatesFromWindow(rr, x, y, lx, ly);
 }
 static void finger_field(SDL_Window *w, SDL_Renderer *rr, float nx, float ny, float *lx, float *ly) {
-    if (SV.orient) { int ww, wh; SDL_GetWindowSize(w, &ww, &wh); tate_map(w, rr, nx * ww, ny * wh, lx, ly); }
-    else { *lx = nx * PNJ_W; *ly = ny * PNJ_H; }
+    int ww, wh; SDL_GetWindowSize(w, &ww, &wh); mouse_field(w, rr, nx * ww, ny * wh, lx, ly);
 }
 
 /* ---------- remappable keys and pad ---------- */
 static int pad_l, pad_r, stick_l, stick_r;                  /* game controller: dpad and left stick as left/right */
-static unsigned char pstate[SDL_CONTROLLER_BUTTON_MAX]; static int sdir[4];
+static unsigned char pstate[SDL_GAMEPAD_BUTTON_COUNT]; static int sdir[4];
 static void recalc_pad(void) {
     pad_l = pad_r = 0;
-    for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; b++) if (pstate[b]) { int a = act_of_pad(b); if (a == ACT_LEFT) pad_l = 1; else if (a == ACT_RIGHT) pad_r = 1; }
+    for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; b++) if (pstate[b]) { int a = act_of_pad(b); if (a == ACT_LEFT) pad_l = 1; else if (a == ACT_RIGHT) pad_r = 1; }
 }
 static void nav_act(int a) { if (a == ACT_LEFT) kb_nav(-1, 0); else if (a == ACT_RIGHT) kb_nav(1, 0); else if (a == ACT_UP) kb_nav(0, -1); else if (a == ACT_DOWN) kb_nav(0, 1); }
 static void stick_dir(int btn, int on) {                    /* the left stick counts as the D-pad, so it follows the same bindings */
-    int i = btn - SDL_CONTROLLER_BUTTON_DPAD_UP; if (sdir[i] == on) return;
+    int i = btn - SDL_GAMEPAD_BUTTON_DPAD_UP; if (sdir[i] == on) return;
     sdir[i] = on;
     if (on && kb_active()) nav_act(act_of_pad(btn));
     stick_l = stick_r = 0;
-    for (int d = 0; d < 4; d++) if (sdir[d]) { int a = act_of_pad(SDL_CONTROLLER_BUTTON_DPAD_UP + d); if (a == ACT_LEFT) stick_l = 1; else if (a == ACT_RIGHT) stick_r = 1; }
+    for (int d = 0; d < 4; d++) if (sdir[d]) { int a = act_of_pad(SDL_GAMEPAD_BUTTON_DPAD_UP + d); if (a == ACT_LEFT) stick_l = 1; else if (a == ACT_RIGHT) stick_r = 1; }
 }
 static void cap_key(SDL_Keycode k) {
     int a = cap / 3, sl = cap % 3;
@@ -376,7 +377,7 @@ static void cap_key(SDL_Keycode k) {
 }
 static void cap_pad(int b) {
     int a = cap / 3, sl = cap % 3;
-    if (sl != 2 || b == SDL_CONTROLLER_BUTTON_GUIDE) return;
+    if (sl != 2 || b == SDL_GAMEPAD_BUTTON_GUIDE) return;
     for (int x = 0; x < ACT_N; x++) if (SV.pad[x] == b) SV.pad[x] = -1;
     SV.pad[a] = b; cap = -1; save_write(); audio_play(A_DECIDE);
 }
@@ -434,7 +435,7 @@ static int digital_play(void) { return ui_mode == UI_PLAY && !paused && !ctrl_an
 static int fslot(SDL_FingerID id) { for (int i = 0; i < MAXF; i++) if (fing[i].on && fing[i].id == id) return i; return -1; }
 static void finger_event(Uint32 type, SDL_FingerID id, double lx, double ly) {
     int i = fslot(id);
-    if (type == SDL_FINGERDOWN) {
+    if (type == SDL_EVENT_FINGER_DOWN) {
         if (i >= 0) { fing[i].on = 0; if (i == fprim) { fprim = -1; touch_end(); } }      /* a down for a finger we think is still down: its up was lost, start over */
         for (i = 0; i < MAXF && fing[i].on; i++) ;
         if (i == MAXF) return;
@@ -443,7 +444,7 @@ static void finger_event(Uint32 type, SDL_FingerID id, double lx, double ly) {
         else if (digital_play()) touch_dir = lx < 160 ? -1 : 1;
     } else if (i < 0) {
         return;
-    } else if (type == SDL_FINGERMOTION) {
+    } else if (type == SDL_EVENT_FINGER_MOTION) {
         fing[i].x = lx;
         if (i == fprim) touch_move(lx, ly); else if (digital_play()) touch_dir = lx < 160 ? -1 : 1;
     } else {                                                  /* finger up */
@@ -464,8 +465,8 @@ static double current_tilt(void) {
 }
 
 static int selftest(int steps, uint32_t seed, const char *bmp, int stage, int level) {
-    SDL_Window *w = SDL_CreateWindow("pnj", 0, 0, PNJ_W, PNJ_H, SDL_WINDOW_HIDDEN);
-    SDL_Renderer *r = w ? SDL_CreateRenderer(w, -1, SDL_RENDERER_SOFTWARE) : NULL;
+    SDL_Window *w = SDL_CreateWindow("pnj", PNJ_W, PNJ_H, SDL_WINDOW_HIDDEN);
+    SDL_Renderer *r = w ? SDL_CreateRenderer(w, "software") : NULL;
     if (!r) { fprintf(stderr, "no renderer: %s\n", SDL_GetError()); return 2; }
     save_load(); SV.top[0][0] = 12345; SV.top[0][1] = 9000; SV.top[0][2] = 500; SV.top[1][0] = 777;
     new_game(seed, stage); G.start_level = level;
@@ -479,13 +480,14 @@ static int selftest(int steps, uint32_t seed, const char *bmp, int stage, int le
     if (tf) fclose(tf);
     if (getenv("PNJ_PAUSE")) { paused = 1; render(r); } else if (getenv("PNJ_MENU")) { sel_stage = stage; int m = atoi(getenv("PNJ_MENU")); if (m == UI_OVER) { over_score = 4321; over_new = 1; over_nach = 4; over_ach[0] = 3; over_ach[1] = 12; over_ach[2] = 80; over_ach[3] = 81; } ui_enter(m); ui_L = steps; draw_menu(r); } else
     render(r);
-    SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, PNJ_W, PNJ_H, 32, SDL_PIXELFORMAT_ARGB8888);
-    SDL_RenderReadPixels(r, NULL, SDL_PIXELFORMAT_ARGB8888, s->pixels, s->pitch);
-    if (bmp) SDL_SaveBMP(s, bmp);
+    SDL_Surface *s0 = SDL_RenderReadPixels(r, NULL);
+    SDL_Surface *s = s0 ? SDL_ConvertSurface(s0, SDL_PIXELFORMAT_ARGB8888) : NULL;
+    SDL_DestroySurface(s0);
+    if (bmp && s) SDL_SaveBMP(s, bmp);
     int loaded = 0; for (int i = 0; i < PNJ_NTEX; i++) if (TEX[i]) loaded++;
     printf("selftest steps=%d x=%.3f y=%.3f cam=%.3f height=%d draw=%d nplat=%d textures=%d\n", steps, (double)G.p.x, (double)G.p.y,
            (double)G.cam594, pnj_height(&G), G.ndraw, G.nplat, loaded);
-    SDL_FreeSurface(s); SDL_DestroyRenderer(r); SDL_DestroyWindow(w);
+    SDL_DestroySurface(s); SDL_DestroyRenderer(r); SDL_DestroyWindow(w);
     return 0;
 }
 
@@ -513,10 +515,9 @@ int main(int argc, char *argv[]) {
 #endif
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "Portrait");
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     no_bundle = getenv("PNJ_NO_BUNDLE") != NULL;
     if (pack_find(pack_arg)) { pack_load_maps(); SDL_Log("game data pack: %s (%d files, %d maps)", pack_path, PKN, PK_NMAPS); }
     data_loaded();
@@ -544,19 +545,21 @@ int main(int argc, char *argv[]) {
     if (getenv("SteamDeck") || getenv("SteamGamepadUI")) start_fs = 1;        /* Steam sets these when it launches a game on a Steam Deck */
     if (windowed) start_fs = 0;
     int win_h = 720, win_w = 480;                           /* portrait 2:3, as tall as is comfortable on this display */
-    { SDL_Rect ub; if (SDL_GetDisplayUsableBounds(0, &ub) == 0 && ub.w > 0 && ub.h > 0) {
+    { SDL_Rect ub; if (SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &ub) && ub.w > 0 && ub.h > 0) {
         win_h = ub.h * 88 / 100; if (win_h > 960) win_h = 960; win_w = win_h * 2 / 3;
         if (win_w > ub.w * 9 / 10) { win_w = ub.w * 9 / 10; win_h = win_w * 3 / 2; }
         if (win_h < 480) { win_h = 480; win_w = 320; } } }
-    SDL_Window *win = SDL_CreateWindow("Pac'N-Jump  " PNJ_VERSION, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h,
-                                       SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI | (start_fs ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
+    SDL_Window *win = SDL_CreateWindow("Pac'N-Jump  " PNJ_VERSION, win_w, win_h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | (start_fs ? SDL_WINDOW_FULLSCREEN : 0));
+    if (!win) { fprintf(stderr, "window: %s\n", SDL_GetError()); return 1; }
+    if (!start_fs) SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_SetWindowMinimumSize(win, 240, 360);
-    SDL_Renderer *r = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (!r) r = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
+    SDL_Renderer *r = SDL_CreateRenderer(win, NULL);
+    if (!r) r = SDL_CreateRenderer(win, "software");
     if (!r) { fprintf(stderr, "renderer: %s\n", SDL_GetError()); return 1; }
-    SDL_RenderSetLogicalSize(r, PNJ_W, PNJ_H);
-    SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
-    for (int i = 0; i < SDL_NumJoysticks(); i++) if (SDL_IsGameController(i)) SDL_GameControllerOpen(i);
+    SDL_SetRenderVSync(r, 1);
+    SDL_SetRenderLogicalPresentation(r, PNJ_W, PNJ_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+    { int ng = 0; SDL_JoystickID *ids = SDL_GetGamepads(&ng); for (int i = 0; i < ng; i++) SDL_OpenGamepad(ids[i]); SDL_free(ids); }
 
     srand((unsigned)SDL_GetTicks()); save_load(); if (cli_orient >= 0) SV.orient = cli_orient; ui_enter(UI_TITLE); orient_apply(win, r);
     need_data = !data_present();
@@ -569,32 +572,32 @@ int main(int argc, char *argv[]) {
     while (run) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
-            if (IJ.busy && e.type != SDL_QUIT && e.type != SDL_DROPFILE && e.type != SDL_WINDOWEVENT && e.type != SDL_APP_WILLENTERBACKGROUND && e.type != SDL_APP_DIDENTERFOREGROUND) continue;   /* importing: the window only draws the loader */
+            if (IJ.busy && e.type != SDL_EVENT_QUIT && e.type != SDL_EVENT_DROP_FILE && !(e.type >= SDL_EVENT_WINDOW_FIRST && e.type <= SDL_EVENT_WINDOW_LAST) && e.type != SDL_EVENT_WILL_ENTER_BACKGROUND && e.type != SDL_EVENT_DID_ENTER_FOREGROUND) continue;   /* importing: the window only draws the loader */
             switch (e.type) {
-            case SDL_QUIT: run = 0; break;
-            case SDL_DROPFILE: {
-                char *f = e.drop.file;
+            case SDL_EVENT_QUIT: run = 0; break;
+            case SDL_EVENT_DROP_FILE: {
+                const char *f = e.drop.data;
                 int rm = f && strstr(f, "/import.apk") != NULL;    /* Android: Java's temporary copy of the picked file, deleted once imported */
                 if (f && ends_apk(f) && !IJ.busy) {
                     if (!import_start(f, NULL, rm)) { SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Import failed", imp_msg, win); if (rm) remove(f); }
                     else { cap = -1; IN.left = IN.right = 0; }
                 } else if (rm) remove(f);
-                SDL_free(f); break; }
-            case SDL_APP_WILLENTERBACKGROUND: paused = 1; audio_pause(1); break;
-            case SDL_APP_DIDENTERFOREGROUND: audio_pause(0); break;
-            case SDL_KEYDOWN: case SDL_KEYUP: {
-                int dn = e.type == SDL_KEYDOWN;
-                SDL_Keycode k = e.key.keysym.sym;
+                break; }
+            case SDL_EVENT_WILL_ENTER_BACKGROUND: paused = 1; audio_pause(1); break;
+            case SDL_EVENT_DID_ENTER_FOREGROUND: audio_pause(0); break;
+            case SDL_EVENT_KEY_DOWN: case SDL_EVENT_KEY_UP: {
+                int dn = e.type == SDL_EVENT_KEY_DOWN;
+                SDL_Keycode k = e.key.key;
                 if (k == SDLK_KP_ENTER) k = SDLK_RETURN;
                 if (cap >= 0) { if (dn && !e.key.repeat) cap_key(k); break; }                    /* controls screen: the next key becomes the binding */
-                if (dn && k != SDLK_AC_BACK && k != SDLK_VOLUMEUP && k != SDLK_VOLUMEDOWN && k != SDLK_AUDIOMUTE && k != SDLK_POWER) in_dev = IND_KEY;
-                if (dn && !e.key.repeat && (ui_mode == UI_TITLE || ui_mode == UI_OVER) && !(e.key.keysym.mod & (KMOD_ALT | KMOD_GUI | KMOD_CTRL)) &&
+                if (dn && k != SDLK_AC_BACK && k != SDLK_VOLUMEUP && k != SDLK_VOLUMEDOWN && k != SDLK_MUTE && k != SDLK_POWER) in_dev = IND_KEY;
+                if (dn && !e.key.repeat && (ui_mode == UI_TITLE || ui_mode == UI_OVER) && !(e.key.mod & (SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_CTRL)) &&
                     k != SDLK_F11 && k != SDLK_AC_BACK && k != SDLK_VOLUMEUP && k != SDLK_VOLUMEDOWN &&
                     !(k >= SDLK_LCTRL && k <= SDLK_RGUI) && k != SDLK_CAPSLOCK && k != SDLK_NUMLOCKCLEAR && k != SDLK_SCROLLLOCK && !(ui_mode == UI_TITLE && act_of_key(k) == ACT_BACK)) {
                     ui_touch(PNJ_W / 2.0, PNJ_H / 2.0); break; }                                    /* title and game over: any key continues */
-                if (dn && (k == SDLK_F11 || (k == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT)))) {   /* F11 / Alt+Enter */
-                    SDL_SetWindowFullscreen(win, (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP) ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
-                    SDL_ShowCursor(SDL_ENABLE); break; }
+                if (dn && (k == SDLK_F11 || (k == SDLK_RETURN && (e.key.mod & SDL_KMOD_ALT)))) {   /* F11 / Alt+Enter */
+                    SDL_SetWindowFullscreen(win, !(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
+                    SDL_ShowCursor(); break; }
                 int act = act_of_key(k);
                 if (act == ACT_LEFT || act == ACT_RIGHT) {
                     if (dn && kb_active()) nav_act(act);                                          /* menus step on every press, repeats included */
@@ -602,49 +605,49 @@ int main(int argc, char *argv[]) {
                 }
                 else if (act == ACT_UP || act == ACT_DOWN) { if (dn && kb_active()) nav_act(act); }
                 else if (act == ACT_BACK) { if (dn) { if (ui_mode == UI_TITLE) run = 0; else kb_back(); } }
-                else if (act == ACT_OK) { if (dn && !e.key.repeat && !(e.key.keysym.mod & KMOD_ALT) && kb_active()) kb_activate(); }
+                else if (act == ACT_OK) { if (dn && !e.key.repeat && !(e.key.mod & SDL_KMOD_ALT) && kb_active()) kb_activate(); }
                 else if (act == ACT_PAUSE) { if (dn) paused = !paused; }
-                else if (k == SDLK_r && dn && ui_mode == UI_PLAY) new_game((uint32_t)SDL_GetTicks() + 1, cur_stage);
+                else if (k == SDLK_R && dn && ui_mode == UI_PLAY) new_game((uint32_t)SDL_GetTicks() + 1, cur_stage);
                 else if (k >= SDLK_1 && k <= SDLK_8 && dn && ui_mode == UI_STAGES) { sel_stage = (int)(k - SDLK_1); pnj_new(&G, 1, sel_stage); }
                 break; }
-            case SDL_WINDOWEVENT:
-                if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST || e.window.event == SDL_WINDOWEVENT_MINIMIZED) { if (ui_mode == UI_PLAY) paused = 1; audio_pause(1); }
-                else if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || e.window.event == SDL_WINDOWEVENT_RESTORED) { audio_pause(0); last = SDL_GetPerformanceCounter(); acc = 0; }
-                break;
-            case SDL_CONTROLLERDEVICEADDED: SDL_GameControllerOpen(e.cdevice.which); break;
-            case SDL_CONTROLLERBUTTONDOWN: case SDL_CONTROLLERBUTTONUP: {
-                int dn = e.type == SDL_CONTROLLERBUTTONDOWN, b = e.cbutton.button;
+            case SDL_EVENT_WINDOW_FOCUS_LOST: case SDL_EVENT_WINDOW_MINIMIZED:
+                if (ui_mode == UI_PLAY) paused = 1; audio_pause(1); break;
+            case SDL_EVENT_WINDOW_FOCUS_GAINED: case SDL_EVENT_WINDOW_RESTORED:
+                audio_pause(0); last = SDL_GetPerformanceCounter(); acc = 0; break;
+            case SDL_EVENT_GAMEPAD_ADDED: SDL_OpenGamepad(e.gdevice.which); break;
+            case SDL_EVENT_GAMEPAD_BUTTON_DOWN: case SDL_EVENT_GAMEPAD_BUTTON_UP: {
+                int dn = e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN, b = e.gbutton.button;
                 if (cap >= 0) { if (dn) cap_pad(b); break; }
                 if (dn) in_dev = IND_PAD;
                 if (dn && (ui_mode == UI_TITLE || ui_mode == UI_OVER)) { ui_touch(PNJ_W / 2.0, PNJ_H / 2.0); break; }   /* any button continues */
-                if (b >= 0 && b < SDL_CONTROLLER_BUTTON_MAX) { pstate[b] = (unsigned char)dn; recalc_pad(); }
+                if (b >= 0 && b < SDL_GAMEPAD_BUTTON_COUNT) { pstate[b] = (unsigned char)dn; recalc_pad(); }
                 int act = act_of_pad(b);
                 if (act >= ACT_LEFT && act <= ACT_DOWN) { if (dn && kb_active()) nav_act(act); }
                 else if (act == ACT_OK) { if (dn && kb_active()) kb_activate(); }
                 else if (act == ACT_BACK) { if (dn && ui_mode != UI_TITLE) kb_back(); }
                 else if (act == ACT_PAUSE) { if (dn) { if (ui_mode == UI_PLAY) paused = !paused; else kb_activate(); } }
                 break; }
-            case SDL_CONTROLLERAXISMOTION:
+            case SDL_EVENT_GAMEPAD_AXIS_MOTION:
                 if (cap >= 0) break;
-                if (e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) { stick_dir(SDL_CONTROLLER_BUTTON_DPAD_LEFT, e.caxis.value < -12000); stick_dir(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, e.caxis.value > 12000); }
-                else if (e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) { stick_dir(SDL_CONTROLLER_BUTTON_DPAD_UP, e.caxis.value < -12000); stick_dir(SDL_CONTROLLER_BUTTON_DPAD_DOWN, e.caxis.value > 12000); }
+                if (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX) { stick_dir(SDL_GAMEPAD_BUTTON_DPAD_LEFT, e.gaxis.value < -12000); stick_dir(SDL_GAMEPAD_BUTTON_DPAD_RIGHT, e.gaxis.value > 12000); }
+                else if (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY) { stick_dir(SDL_GAMEPAD_BUTTON_DPAD_UP, e.gaxis.value < -12000); stick_dir(SDL_GAMEPAD_BUTTON_DPAD_DOWN, e.gaxis.value > 12000); }
                 break;
-            case SDL_FINGERDOWN: case SDL_FINGERMOTION: case SDL_FINGERUP: {
-                SDL_TouchDeviceType tt = SDL_GetTouchDeviceType(e.tfinger.touchId);
+            case SDL_EVENT_FINGER_DOWN: case SDL_EVENT_FINGER_MOTION: case SDL_EVENT_FINGER_UP: {
+                SDL_TouchDeviceType tt = SDL_GetTouchDeviceType(e.tfinger.touchID);
                 if (tt == SDL_TOUCH_DEVICE_INDIRECT_ABSOLUTE || tt == SDL_TOUCH_DEVICE_INDIRECT_RELATIVE) break;   /* trackpad, not the screen */
-                if (e.type == SDL_FINGERDOWN) in_dev = IND_TOUCH;
+                if (e.type == SDL_EVENT_FINGER_DOWN) in_dev = IND_TOUCH;
                 float lx, ly; finger_field(win, r, e.tfinger.x, e.tfinger.y, &lx, &ly);
-                SDL_ShowCursor(SDL_DISABLE);
-                finger_event(e.type, e.tfinger.fingerId, lx, ly);
+                SDL_HideCursor();
+                finger_event(e.type, e.tfinger.fingerID, lx, ly);
                 break; }
-            case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: case SDL_MOUSEMOTION: {
-                Uint32 which = e.type == SDL_MOUSEMOTION ? e.motion.which : e.button.which;
+            case SDL_EVENT_MOUSE_BUTTON_DOWN: case SDL_EVENT_MOUSE_BUTTON_UP: case SDL_EVENT_MOUSE_MOTION: {
+                Uint32 which = e.type == SDL_EVENT_MOUSE_MOTION ? e.motion.which : e.button.which;
                 if (which == SDL_TOUCH_MOUSEID) break;     /* touch already handled above */
-                SDL_ShowCursor(SDL_ENABLE);
-                if (e.type == SDL_MOUSEBUTTONDOWN) in_dev = IND_MOUSE;
+                SDL_ShowCursor();
+                if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) in_dev = IND_MOUSE;
                 float lx, ly;
-                if (e.type == SDL_MOUSEMOTION) { mouse_field(win, r, e.motion.x, e.motion.y, &lx, &ly); touch_move(lx, ly); }
-                else if (e.type == SDL_MOUSEBUTTONDOWN) { mouse_field(win, r, e.button.x, e.button.y, &lx, &ly); touch_begin(lx, ly); }
+                if (e.type == SDL_EVENT_MOUSE_MOTION) { mouse_field(win, r, e.motion.x, e.motion.y, &lx, &ly); touch_move(lx, ly); }
+                else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) { mouse_field(win, r, e.button.x, e.button.y, &lx, &ly); touch_begin(lx, ly); }
                 else touch_end();
                 break; }
             }

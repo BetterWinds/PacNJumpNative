@@ -15,7 +15,7 @@
 typedef struct { Uint8 *buf; Uint32 len; } sfx_buf;
 typedef struct { const sfx_buf *s; Uint32 pos; } voice;
 
-static SDL_AudioDeviceID aud_dev;
+static SDL_AudioStream *aud_stream; static SDL_AudioDeviceID aud_dev;
 static sfx_buf SFXB[32];
 static voice voices[16];
 static unsigned char *mus_data; static stb_vorbis *mus_vb; static char mus_name[32], mus_want[32];
@@ -48,11 +48,11 @@ static void audio_load_sfx(int slot, const char *file) {
     char name[64]; snprintf(name, sizeof name, "audio/%s.wav", file);
     size_t n; unsigned char *d = read_asset(name, &n);
     if (!d) return;
-    SDL_AudioSpec spec; Uint8 *buf; Uint32 len;
-    SDL_RWops *rw = SDL_RWFromConstMem(d, (int)n);
-    if (SDL_LoadWAV_RW(rw, 1, &spec, &buf, &len) && spec.freq == 44100 && spec.channels == 2 && spec.format == AUDIO_S16LSB) {
+    SDL_AudioSpec spec; Uint8 *buf = 0; Uint32 len = 0;
+    SDL_IOStream *rw = SDL_IOFromConstMem(d, n);
+    if (SDL_LoadWAV_IO(rw, true, &spec, &buf, &len) && spec.freq == 44100 && spec.channels == 2 && spec.format == SDL_AUDIO_S16LE) {
         SFXB[slot].buf = buf; SFXB[slot].len = len;
-    } else if (buf) SDL_FreeWAV(buf);
+    } else if (buf) SDL_free(buf);
     free(d);
 }
 
@@ -72,18 +72,11 @@ static void audio_music_open(const char *track) {     /* main thread only; audio
     }
     snprintf(name, sizeof name, "audio/%s.wav", track);
     d = read_asset(name, &n); if (!d) return;
-    SDL_AudioSpec sp; Uint8 *buf = 0; Uint32 len = 0; SDL_AudioCVT cvt;
-    if (SDL_LoadWAV_RW(SDL_RWFromConstMem(d, (int)n), 1, &sp, &buf, &len) && SDL_BuildAudioCVT(&cvt, sp.format, sp.channels, sp.freq, AUDIO_S16SYS, 2, 44100) >= 0 && len > 0) {
-        Uint8 *cb = (Uint8 *)SDL_malloc((size_t)len * (size_t)(cvt.needed ? cvt.len_mult : 1));
-        if (cb) {
-            memcpy(cb, buf, len); cvt.buf = cb; cvt.len = (int)len;
-            if (!cvt.needed || SDL_ConvertAudio(&cvt) == 0) {
-                Uint32 out = cvt.needed ? (Uint32)cvt.len_cvt : len;
-                audio_music_close(); mus_pcm = (short *)cb; mus_frames = out / 4; mus_pos = 0; snprintf(mus_name, sizeof mus_name, "%s", track);
-            } else SDL_free(cb);
-        }
-    }
-    if (buf) SDL_FreeWAV(buf);
+    SDL_AudioSpec sp, dst = { SDL_AUDIO_S16, 2, 44100 }; Uint8 *buf = 0, *cb = 0; Uint32 len = 0; int cl = 0;
+    if (SDL_LoadWAV_IO(SDL_IOFromConstMem(d, n), true, &sp, &buf, &len) && len > 0 && SDL_ConvertAudioSamples(&sp, buf, (int)len, &dst, &cb, &cl) && cl >= 4) {
+        audio_music_close(); mus_pcm = (short *)cb; mus_frames = (Uint32)cl / 4; mus_pos = 0; snprintf(mus_name, sizeof mus_name, "%s", track);
+    } else SDL_free(cb);
+    if (buf) SDL_free(buf);
     free(d);
 }
 
@@ -121,39 +114,46 @@ static void audio_cb(void *ud, Uint8 *out, int bytes) {
 static void audio_load_all(void) {      /* (re)loads every effect; used at start-up and after a pack import */
     static const char *names[] = { "jump", "break", "mappy_jump", "eat01", "eat02", "eat03", "eat04", "eat05", "eat06", "eat07", "eat08",
         "eat_enemy", "eat_pow", "miss", "bound", "balloon", "candle", "hat" };       /* slots 1.. match PNJ_SFX_* */
-    if (aud_dev) SDL_LockAudioDevice(aud_dev);
+    if (aud_stream) SDL_LockAudioStream(aud_stream);
     for (int v = 0; v < 16; v++) voices[v].s = 0;
     for (int i = 0; i < 32; i++) { SDL_free(SFXB[i].buf); SFXB[i].buf = 0; SFXB[i].len = 0; }
     for (int i = 0; i < 18; i++) audio_load_sfx(i + 1, names[i]);
     audio_load_sfx(A_SELECT, "select"); audio_load_sfx(A_DECIDE, "decide"); audio_load_sfx(A_CANCEL, "cancel");
     audio_load_sfx(A_GAMEOVER, "gameover"); audio_load_sfx(A_HISCORE, "hiscore"); audio_load_sfx(A_EAT_ITEM, "eat_item");
     audio_load_sfx(A_WARN, "st8_warning");
-    if (aud_dev) SDL_UnlockAudioDevice(aud_dev);
+    if (aud_stream) SDL_UnlockAudioStream(aud_stream);
+}
+/* SDL3 audio streams: SDL asks for more data and we feed it from the same mixer callback the SDL2 build used */
+static void SDLCALL audio_sdl_cb(void *ud, SDL_AudioStream *st, int additional, int total) {
+    (void)ud; (void)total;
+    while (additional > 0) {
+        Uint8 tmp[4096]; int n = additional < (int)sizeof tmp ? additional : (int)sizeof tmp; n &= ~3; if (!n) break;
+        audio_cb(NULL, tmp, n); SDL_PutAudioStreamData(st, tmp, n); additional -= n;
+    }
 }
 static void audio_init(void) {
-    if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) return;
-    SDL_AudioSpec want; SDL_zero(want);
-    want.freq = 44100; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024; want.callback = audio_cb;
-    SDL_AudioSpec have;
-    aud_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (!aud_dev) return;
+    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) return;
+    SDL_AudioSpec want = { SDL_AUDIO_S16, 2, 44100 };
+    aud_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, audio_sdl_cb, NULL);
+    if (!aud_stream) return;
+    aud_dev = SDL_GetAudioStreamDevice(aud_stream);
     audio_load_all();
-    SDL_PauseAudioDevice(aud_dev, 0);
+    SDL_ResumeAudioStreamDevice(aud_stream);
 }
 
 static void audio_play(int slot) {
-    if (!aud_dev || slot <= 0 || slot >= 32 || !SFXB[slot].buf) return;
-    SDL_LockAudioDevice(aud_dev);
+    if (!aud_stream || slot <= 0 || slot >= 32 || !SFXB[slot].buf) return;
+    SDL_LockAudioStream(aud_stream);
     for (int v = 0; v < 16; v++) if (!voices[v].s) { voices[v].s = &SFXB[slot]; voices[v].pos = 0; break; }
-    SDL_UnlockAudioDevice(aud_dev);
+    SDL_UnlockAudioStream(aud_stream);
 }
 
 static void audio_music(const char *track) {            /* "" = stop; no-op if already playing */
-    if (!aud_dev || !strcmp(track, mus_want)) return;
+    if (!aud_stream || !strcmp(track, mus_want)) return;
     snprintf(mus_want, sizeof mus_want, "%s", track);
     if (!strcmp(track, mus_name)) return;                 /* already playing it (e.g. the jingle was missing and the stage music carried on) */
-    SDL_LockAudioDevice(aud_dev);
+    SDL_LockAudioStream(aud_stream);
     audio_music_open(track);
-    SDL_UnlockAudioDevice(aud_dev);
+    SDL_UnlockAudioStream(aud_stream);
 }
-static void audio_pause(int p) { if (aud_dev) SDL_PauseAudioDevice(aud_dev, p); }
+static void audio_pause(int p) { if (aud_stream) { if (p) SDL_PauseAudioStreamDevice(aud_stream); else SDL_ResumeAudioStreamDevice(aud_stream); } }

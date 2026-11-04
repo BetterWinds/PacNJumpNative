@@ -15,12 +15,12 @@ static Uint32 rd16(const unsigned char *p) { return p[0] | (p[1] << 8); }
 
 static int zip_open(zip_t *z, const char *path) {
     memset(z, 0, sizeof *z);
-    SDL_RWops *f = SDL_RWFromFile(path, "rb"); if (!f) return 0;
-    Sint64 sz = SDL_RWsize(f);
-    if (sz < 100) { SDL_RWclose(f); return 0; }
+    SDL_IOStream *f = SDL_IOFromFile(path, "rb"); if (!f) return 0;
+    Sint64 sz = SDL_GetIOSize(f);
+    if (sz < 100) { SDL_CloseIO(f); return 0; }
     z->d = (unsigned char *)malloc((size_t)sz); z->n = (size_t)sz;
-    if (!z->d || SDL_RWread(f, z->d, 1, (size_t)sz) != (size_t)sz) { SDL_RWclose(f); free(z->d); z->d = 0; return 0; }
-    SDL_RWclose(f);
+    if (!z->d || SDL_ReadIO(f, z->d, (size_t)sz) != (size_t)sz) { SDL_CloseIO(f); free(z->d); z->d = 0; return 0; }
+    SDL_CloseIO(f);
     size_t eo = 0; for (size_t i = z->n - 22; ; i--) { if (rd32(z->d + i) == 0x06054b50) { eo = i; break; } if (i == 0 || z->n - i > 70000) return 0; }
     int cnt = (int)rd16(z->d + eo + 10); size_t cd = rd32(z->d + eo + 16);
     z->e = (zip_ent *)calloc((size_t)cnt, sizeof *z->e);

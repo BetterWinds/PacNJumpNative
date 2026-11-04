@@ -3,7 +3,7 @@
 name: Desktop
 on:
   push:
-    branches: [main]
+    branches: [main, sdl3]
     paths-ignore: ['web/**', 'android/**', '*.md']
     tags: ['v*']
   pull_request:
@@ -24,7 +24,7 @@ jobs:
       - name: Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev \
+          sudo apt-get install -y ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev libxtst-dev \
             libwayland-dev libdrm-dev libgbm-dev libgl1-mesa-dev libegl1-mesa-dev libpulse-dev libasound2-dev libudev-dev libdbus-1-dev
       - name: Build
         run: |
