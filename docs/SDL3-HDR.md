@@ -1,6 +1,6 @@
 # HDR and the SDL3 move
 
-Status: the desktop shell and the Android project both run on SDL3 (branch `sdl3`, SDL 3.4.20 in `third_party/SDL3`) and there is a first HDR pass. The HDR part has only been compiled and run on a non-HDR display here. It needs a look on a real HDR screen. The Android build is only verified by CI so far (CI uploads a test APK on this branch), not yet run on the LG G8.
+Status: the desktop shell and the Android project both run on SDL3 (merged into `main`, SDL 3.4.20 in `third_party/SDL3`) and there is a first HDR pass. The HDR part has only been compiled and run on a non-HDR display here. It needs a look on a real HDR screen. The Android build is only verified by CI so far (CI builds it on every push), not yet run on the LG G8.
 
 ## What is in the branch
 
@@ -61,7 +61,7 @@ Biggest risks, in order: the Android glue, the audio rewrite (the mixer in `audi
 
 ## Plan
 
-1. Add SDL3 as a second submodule on an `sdl3` branch. Keep SDL2 on `main` until SDL3 passes every test.
+1. Add SDL3 as a second submodule on an `sdl3` branch. Done, and merged into `main` before the full hardware test pass.
 2. Add a thin compat header (`sdlx.h`) so `main.c` and `menus.h` call one set of names. That keeps the diff reviewable and lets both versions build for a while.
 3. Desktop first (Linux, then Windows and macOS through CI). Android last.
 4. Turn on the HDR colorspace behind a menu toggle (OFF by default), read the headroom properties, and add the handful of over-white highlights.
