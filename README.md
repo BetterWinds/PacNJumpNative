@@ -8,7 +8,7 @@ A port of Pac'N-Jump (Namco, 2011), a mobile game that was pulled from the store
 
 **Windows, macOS, Linux:** builds come from the `desktop` workflow (Actions tab, Artifacts). Unzip, run, and drag the APK onto the window. It imports once and shows a progress bar while it works. Tagged versions will show up under Releases. More in `packaging/README-desktop.txt`.
 
-**Android, no tools:** open https://heyjonanderson.github.io/PacNJumpAndroidNative/, drop your original APK on the page and download the APK it builds. It all happens in your browser and nothing is uploaded. Android 7.0 and up, 64-bit.
+**Android, no tools:** open https://heyjonanderson.github.io/PacNJumpNative/, drop your original APK on the page and download the APK it builds. It all happens in your browser and nothing is uploaded. Android 7.0 and up, 64-bit.
 
 **Android, import on the phone:** `android\package.bat byo` builds an APK with no game data in it. Install it and pick the original APK on first launch.
 
