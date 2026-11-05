@@ -453,7 +453,7 @@ static void render(SDL_Renderer *r) {
             d->r / 255.0, d->g / 255.0, d->b / 255.0);
     }
     draw_hud(r);
-    if (paused) { if (touch_ui_on()) SPR(r, 65, 160, 19); draw_pause(r); }
+    if (paused && ui_mode == UI_PLAY) { if (touch_ui_on()) SPR(r, 65, 160, 19); draw_pause(r); }   /* Options and Help opened from the pause menu draw over the bare scene */
     draw_hits(r);
 }
 
