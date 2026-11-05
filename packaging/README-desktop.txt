@@ -12,7 +12,7 @@ First run
   The power-up jingle is converted during the import too. Nothing else needs to be installed.
 
 Controls
-  Left / Right arrows or A / D    steer in the game (all keys can be changed: Options > KEYS)
+  Left / Right arrows or A / D    steer in the game (all keys can be changed: Options > Controls > KEYS)
   Menus: arrows (or W A S D)      move between buttons, Enter or Space presses, Esc goes back
                                   (Left/Right turn pages, and move the sliders on a sound row in Options)
   Mouse                           click and drag, like a finger
@@ -22,10 +22,10 @@ Controls
   R                               restart
   F11 or Alt+Enter                fullscreen
   Title / game over screens       any key, pad button, click or tap continues
-  On-screen pad and pause button  Options > TOUCH UI: AUTO (hidden while you use keyboard or pad), ON, OFF
+  On-screen pad and pause button  Options > Controls > TOUCH UI: AUTO (hidden while you use keyboard or pad), ON, OFF
   --fullscreen                    start fullscreen (a Steam Deck does this by itself)
   --windowed                      force a window
-  Options > SCALE                 SMOOTH fills the window, PIXEL keeps whole-number sizes and sharp dots (with black bars)
+  Options > Video > SCALE                 SMOOTH fills the window, PIXEL keeps whole-number sizes and sharp dots (with black bars)
   --orient standard|left|right    screen orientation (see Tate below)
 
 Tate (portrait) play
@@ -33,7 +33,7 @@ Tate (portrait) play
   To play with the monitor tipped on its side, open Options and press the SCREEN button to pick TATE LEFT or
   TATE RIGHT. The picture turns 90 degrees on your landscape screen: with TATE LEFT the top of the game is on the
   left of your screen, with TATE RIGHT it is on the right. Mouse and touch follow the turn.
-  Controls: Options > KEYS. Tap a box, then press the key or pad button. MATCH SCREEN sets the arrows to follow the
+  Controls: Options > Controls > KEYS. Tap a box, then press the key or pad button. MATCH SCREEN sets the arrows to follow the
   turned picture (for example TATE RIGHT: Up arrow steers left). DEFAULTS restores the normal keys.
   If you rotate the display in your OS settings instead, leave SCREEN on STANDARD and use --fullscreen.
   On Linux with X11 a rotated touchscreen may need `xinput map-to-output`.

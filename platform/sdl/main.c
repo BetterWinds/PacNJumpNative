@@ -649,6 +649,8 @@ int main(int argc, char *argv[]) {
                 break; }
             }
         }
+        fs_state = (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
+        if (fs_req) { fs_req = 0; SDL_SetWindowFullscreen(win, fs_state ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP); }
         if (IJ.busy) {
             if (IJ.done) {
                 int ok = import_finish(); if (ok) reset_assets();

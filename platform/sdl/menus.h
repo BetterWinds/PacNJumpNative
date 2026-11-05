@@ -147,7 +147,7 @@ static void digits_right(SDL_Renderer *r, int v, double xr, double ytop) {
 
 /* ---------- hit regions (rebuilt every frame) ---------- */
 enum { H_NONE, H_TITLE, H_PLAY, H_RECORD, H_OPTION, H_BACK, H_PREV, H_NEXT, H_START, H_SFXT, H_MUST, H_SFXS, H_MUSS, H_CTRL, H_SNAP,
-       H_P_OPTION, H_P_EXIT, H_P_RESUME, H_OVER, H_HELP, H_ACH, H_P_HELP, H_QUIT, H_P_QUIT, H_ORIENT, H_KEYS, H_RESET, H_MATCH, H_TOUCHUI, H_SCALE, H_KEY0 };   /* H_KEY0 + row * 3 + slot: a binding box */
+       H_P_OPTION, H_P_EXIT, H_P_RESUME, H_OVER, H_HELP, H_ACH, H_P_HELP, H_QUIT, H_P_QUIT, H_ORIENT, H_KEYS, H_RESET, H_MATCH, H_TOUCHUI, H_SCALE, H_O_SND, H_O_VID, H_O_CTL, H_FS, H_KEY0 };   /* H_KEY0 + row * 3 + slot: a binding box */
 #if !defined(__ANDROID__) && !defined(__IPHONEOS__)
 #define PNJ_HAS_QUIT 1      /* desktop only: phones quit through the system */
 #define PNJ_DESKTOP 1
@@ -170,7 +170,9 @@ static void slider(SDL_Renderer *r, int x, int y, int w, double val, int on, int
 }
 
 /* ---------- state ---------- */
-enum { UI_TITLE, UI_MENU, UI_STAGES, UI_RECORDS, UI_OPTION, UI_OVER, UI_PLAY, UI_HELP, UI_ACH, UI_KEYS };
+enum { UI_TITLE, UI_MENU, UI_STAGES, UI_RECORDS, UI_OPTION, UI_OVER, UI_PLAY, UI_HELP, UI_ACH, UI_KEYS, UI_OPT_SOUND, UI_OPT_VIDEO, UI_OPT_CTRL };
+static int is_opt(int m) { return m == UI_OPTION || m == UI_KEYS || m == UI_OPT_SOUND || m == UI_OPT_VIDEO || m == UI_OPT_CTRL; }     /* the Options screens and their sub-screens */
+static int fs_state, fs_req;                         /* fullscreen: main.c keeps fs_state current and acts on fs_req */
 static int ui_mode = UI_TITLE, ui_L = 0, sel_stage = 0, title_start = 0, rec_page = 0, opt_back = UI_MENU;
 static int over_score = 0, over_new = 0, help_page = 0, ach_page = 0, help_back = UI_MENU;
 static int over_ach[90], over_nach = 0;
@@ -179,7 +181,7 @@ static const int TITLE_X[10] = { 10, 32, 66, 102, 119, 153, 175, 207, 239, 275 }
 static const char *const STAGE_NAMES[8] = { "PAC-MAN", "DIG DUG", "RALLY-X", "GALAGA", "MAPPY", "PAC-LAND", "THE TOWER OF DRUAGA", "XEVIOUS" };
 
 static void ui_enter(int mode) {
-    int keep = mode == UI_OVER || ((mode == UI_OPTION || mode == UI_KEYS) && opt_back == UI_PLAY) || (mode == UI_HELP && help_back == UI_PLAY);
+    int keep = mode == UI_OVER || (is_opt(mode) && opt_back == UI_PLAY) || (mode == UI_HELP && help_back == UI_PLAY);
     ui_mode = mode;
     if (mode == UI_TITLE) {
         title_start = ui_L;
@@ -292,7 +294,7 @@ static void draw_hits(SDL_Renderer *r) {   /* dev aid: PNJ_HITS=1 outlines every
 }
 static void draw_menu(SDL_Renderer *r) {
     nhits = 0;
-    int scene = ui_mode == UI_OVER || ((ui_mode == UI_OPTION || ui_mode == UI_KEYS) && opt_back == UI_PLAY) || (ui_mode == UI_HELP && help_back == UI_PLAY);
+    int scene = ui_mode == UI_OVER || (is_opt(ui_mode) && opt_back == UI_PLAY) || (ui_mode == UI_HELP && help_back == UI_PLAY);
     if (scene) render(r), nhits = 0;
     else {
         G.stage = sel_stage; G.L = ui_L; G.cam594 = (fx)(-ui_L * 4); G.peak = 0; G.p.power = 0;
@@ -356,39 +358,69 @@ static void draw_menu(SDL_Renderer *r) {
         SPR(r, 67, 289, 448); hit_add(256, 410, 64, 70, H_NEXT);
         backbtn(r);
         break; }
-    case UI_OPTION: {
+    case UI_OPTION: {                                           /* the hub: pick a group */
         shade(r, scene ? 200 : 155);
         ftext(r, "OPTION", 160, 48, 22, 0xffe07a, 0, 1);
-        ftext(r, "SOUND EFFECTS", 20, 84, 11, row_rgb(H_SFXT, 0xaaaaaa), 1, 1);
-        btn(r, SV.sfx_on ? "ON" : "OFF", 14, 86, 70, 38, H_SFXT, SV.sfx_on ? 0xffe07a : 0x777777, 13, 0);
-        slider(r, 110, 105, 180, SV.sfx_vol, SV.sfx_on, H_SFXS);
-        ftext(r, "BACKGROUND MUSIC", 20, 154, 11, row_rgb(H_MUST, 0xaaaaaa), 1, 1);
-        btn(r, SV.mus_on ? "ON" : "OFF", 14, 156, 70, 38, H_MUST, SV.mus_on ? 0xffe07a : 0x777777, 13, 0);
-        slider(r, 110, 175, 180, SV.mus_vol, SV.mus_on, H_MUSS);
-        ftext(r, "CONTROLS", 20, 236, 11, row_rgb(H_CTRL, 0xaaaaaa), 1, 1);
-        btn(r, touchui_name(SV.touchui), 150, 216, 164, 32, H_TOUCHUI, menu_fill(H_TOUCHUI, 0xb4b4d2), 10, 0);
-        ftext(r, SV.analog ? "ANALOG PAD" : "DIGITAL PAD", 30, 281, 15, 0xffffff, 1, 1);
-        SPR(r, 66, 204, 274); hit_add(172, 252, 62, 44, H_CTRL);
-        SPR(r, 67, 269, 274); hit_add(238, 252, 62, 44, H_CTRL);
-        if (SV.analog) { ftext(r, "ANALOG-STYLE VIRTUAL CONTROL PAD.", 14, 328, 8, 0xcccccc, 1, 1); ftext(r, "THE SLIDE BAR RESPONDS ANYWHERE.", 14, 346, 8, 0xcccccc, 1, 1); }
-        else ftext(r, "DIGITAL-STYLE VIRTUAL CONTROL PAD.", 14, 328, 8, 0xcccccc, 1, 1);
-        if (!SV.analog) {
-            btn(r, SV.snappy ? "ON" : "OFF", 14, 373, 70, 38, H_SNAP, SV.snappy ? 0xffe07a : 0x777777, 13, 0);
-            ftext(r, "SNAPPY DIGITAL RESPONSE", 96, 396, 10, row_rgb(H_SNAP, 0xffffff), 1, 1);
-        }
-        backbtn(r);
 #ifdef PNJ_DESKTOP
-        ftext(r, "SCREEN", 78, 417, 8, row_rgb(H_ORIENT, 0xaaaaaa), 1, 1);
-        btn(r, orient_name(SV.orient), 74, 424, 100, 38, H_ORIENT, menu_fill(H_ORIENT, 0xb4b4d2), 10, 0);
-        btn(r, "KEYS", 178, 424, 54, 38, H_KEYS, menu_fill(H_KEYS, 0xb4b4d2), 10, 0);
-        ftext(r, "SCALE", 240, 417, 8, row_rgb(H_SCALE, 0xaaaaaa), 1, 1);
-        btn(r, SV.intscale ? "PIXEL" : "SMOOTH", 236, 424, 78, 38, H_SCALE, menu_fill(H_SCALE, 0xb4b4d2), 10, 0);
+        const int rows = 3;
+#else
+        const int rows = 2;
 #endif
+        int y = rows == 3 ? 120 : 150;
+        btn(r, "SOUND", 60, y, 200, 56, H_O_SND, menu_fill(H_O_SND, 0xb4b4d2), 18, 0); y += 80;
+#ifdef PNJ_DESKTOP
+        btn(r, "VIDEO", 60, y, 200, 56, H_O_VID, menu_fill(H_O_VID, 0xb4b4d2), 18, 0); y += 80;
+#endif
+        btn(r, "CONTROLS", 60, y, 200, 56, H_O_CTL, menu_fill(H_O_CTL, 0xb4b4d2), 18, 0);
+        backbtn(r);
+        break; }
+    case UI_OPT_SOUND: {
+        shade(r, scene ? 200 : 155);
+        ftext(r, "SOUND", 160, 48, 22, 0xffe07a, 0, 1);
+        ftext(r, "SOUND EFFECTS", 20, 124, 11, row_rgb(H_SFXT, 0xaaaaaa), 1, 1);
+        btn(r, SV.sfx_on ? "ON" : "OFF", 14, 126, 70, 38, H_SFXT, SV.sfx_on ? 0xffe07a : 0x777777, 13, 0);
+        slider(r, 110, 145, 180, SV.sfx_vol, SV.sfx_on, H_SFXS);
+        ftext(r, "BACKGROUND MUSIC", 20, 214, 11, row_rgb(H_MUST, 0xaaaaaa), 1, 1);
+        btn(r, SV.mus_on ? "ON" : "OFF", 14, 216, 70, 38, H_MUST, SV.mus_on ? 0xffe07a : 0x777777, 13, 0);
+        slider(r, 110, 235, 180, SV.mus_vol, SV.mus_on, H_MUSS);
+        backbtn(r);
+        break; }
+    case UI_OPT_VIDEO: {                                        /* desktop only; the hub has no entry for it elsewhere */
+        shade(r, scene ? 200 : 155);
+        ftext(r, "VIDEO", 160, 48, 22, 0xffe07a, 0, 1);
+#ifdef PNJ_DESKTOP
+        ftext(r, "FULLSCREEN", 20, 119, 11, row_rgb(H_FS, 0xaaaaaa), 1, 1);
+        btn(r, fs_state ? "ON" : "OFF", 150, 98, 164, 38, H_FS, fs_state ? 0xffe07a : menu_fill(H_FS, 0xb4b4d2), 12, 0);
+        ftext(r, "SCREEN", 20, 179, 11, row_rgb(H_ORIENT, 0xaaaaaa), 1, 1);
+        btn(r, orient_name(SV.orient), 150, 158, 164, 38, H_ORIENT, menu_fill(H_ORIENT, 0xb4b4d2), 12, 0);
+        ftext(r, "SCALE", 20, 239, 11, row_rgb(H_SCALE, 0xaaaaaa), 1, 1);
+        btn(r, SV.intscale ? "PIXEL" : "SMOOTH", 150, 218, 164, 38, H_SCALE, menu_fill(H_SCALE, 0xb4b4d2), 12, 0);
+#endif
+        backbtn(r);
+        break; }
+    case UI_OPT_CTRL: {
+        shade(r, scene ? 200 : 155);
+        ftext(r, "CONTROLS", 160, 48, 22, 0xffe07a, 0, 1);
+        ftext(r, "TOUCH UI", 20, 119, 11, row_rgb(H_TOUCHUI, 0xaaaaaa), 1, 1);
+        btn(r, touchui_name(SV.touchui), 150, 98, 164, 38, H_TOUCHUI, menu_fill(H_TOUCHUI, 0xb4b4d2), 10, 0);
+        ftext(r, SV.analog ? "ANALOG PAD" : "DIGITAL PAD", 30, 191, 15, 0xffffff, 1, 1);
+        SPR(r, 66, 204, 184); hit_add(172, 162, 62, 44, H_CTRL);
+        SPR(r, 67, 269, 184); hit_add(238, 162, 62, 44, H_CTRL);
+        if (SV.analog) { ftext(r, "ANALOG-STYLE VIRTUAL CONTROL PAD.", 14, 228, 8, 0xcccccc, 1, 1); ftext(r, "THE SLIDE BAR RESPONDS ANYWHERE.", 14, 244, 8, 0xcccccc, 1, 1); }
+        else {
+            ftext(r, "DIGITAL-STYLE VIRTUAL CONTROL PAD.", 14, 228, 8, 0xcccccc, 1, 1);
+            btn(r, SV.snappy ? "ON" : "OFF", 14, 262, 70, 38, H_SNAP, SV.snappy ? 0xffe07a : 0x777777, 13, 0);
+            ftext(r, "SNAPPY DIGITAL RESPONSE", 96, 285, 10, row_rgb(H_SNAP, 0xffffff), 1, 1);
+        }
+#ifdef PNJ_DESKTOP
+        btn(r, "KEYS", 60, 340, 200, 44, H_KEYS, menu_fill(H_KEYS, 0xb4b4d2), 13, 0);
+#endif
+        backbtn(r);
         break; }
     case UI_KEYS: {
         static const char *const names[ACT_N] = { "LEFT", "RIGHT", "MENU UP", "MENU DOWN", "SELECT", "BACK", "PAUSE" };
         shade(r, scene ? 215 : 170);
-        ftext(r, "CONTROLS", 160, 30, 20, 0xffe07a, 0, 1);
+        ftext(r, "KEYS", 160, 30, 20, 0xffe07a, 0, 1);
         ftext(r, "KEY", 131, 66, 8, 0xaaaaaa, 0, 1); ftext(r, "KEY", 205, 66, 8, 0xaaaaaa, 0, 1); ftext(r, "PAD", 279, 66, 8, 0xaaaaaa, 0, 1);
         for (int a = 0; a < ACT_N; a++) {
             int y = 80 + 42 * a; char nb[16];
@@ -479,13 +511,18 @@ static void ui_touch(double lx, double ly) {
         case H_P_HELP: audio_play(A_DECIDE); help_back = UI_PLAY; help_page = 0; ui_enter(UI_HELP); break;
         case H_ORIENT: audio_play(A_SELECT); SV.orient = (SV.orient + 1) % 3; orient_dirty = 1; save_write(); break;
         case H_KEYS: audio_play(A_DECIDE); ui_enter(UI_KEYS); break;
+        case H_O_SND: audio_play(A_DECIDE); ui_enter(UI_OPT_SOUND); break;
+        case H_O_VID: audio_play(A_DECIDE); ui_enter(UI_OPT_VIDEO); break;
+        case H_O_CTL: audio_play(A_DECIDE); ui_enter(UI_OPT_CTRL); break;
+        case H_FS: audio_play(A_SELECT); fs_req = 1; break;
         case H_RESET: audio_play(A_CANCEL); ctl_defaults(&SV); save_write(); break;
         case H_SCALE: audio_play(A_SELECT); SV.intscale = !SV.intscale; save_write(); break;
         case H_TOUCHUI: SV.touchui = (SV.touchui + 1) % 3; audio_play(A_SELECT); save_write(); break;
         case H_MATCH: audio_play(A_DECIDE); ctl_match_screen(&SV, SV.orient); save_write(); break;
         case H_BACK:
             audio_play(A_CANCEL);
-            if (ui_mode == UI_KEYS) { save_write(); ui_enter(UI_OPTION); }
+            if (ui_mode == UI_KEYS) { save_write(); ui_enter(UI_OPT_CTRL); }
+            else if (ui_mode == UI_OPT_SOUND || ui_mode == UI_OPT_VIDEO || ui_mode == UI_OPT_CTRL) { save_write(); ui_enter(UI_OPTION); }
             else if (ui_mode == UI_OPTION && opt_back == UI_PLAY) { ui_mode = UI_PLAY; save_write(); }
             else if (ui_mode == UI_HELP && help_back == UI_PLAY) ui_mode = UI_PLAY;
             else { if (ui_mode == UI_OPTION) save_write(); ui_enter(ui_mode == UI_STAGES || ui_mode == UI_RECORDS || ui_mode == UI_OPTION || ui_mode == UI_HELP || ui_mode == UI_ACH ? UI_MENU : UI_TITLE); }
