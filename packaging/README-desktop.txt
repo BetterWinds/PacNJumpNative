@@ -25,17 +25,17 @@ Controls
   On-screen pad and pause button  Options > Controls > TOUCH UI: AUTO (hidden while you use keyboard or pad), ON, OFF
   --fullscreen                    start fullscreen (a Steam Deck does this by itself)
   --windowed                      force a window
-  Options > Video > SCALE                 SMOOTH fills the window, PIXEL keeps whole-number sizes and sharp dots (with black bars)
+  Options > Video > SCALE                 SMOOTH fills the window, INT SCALE keeps whole-number sizes and sharp dots (with black bars)
   --orient standard|left|right    screen orientation (see Tate below)
 
 Tate (portrait) play
   The game is portrait. By default the window is 2:3 and the picture is letterboxed at any size.
-  To play with the monitor tipped on its side, open Options and press the SCREEN button to pick TATE LEFT or
+  To play with the monitor tipped on its side, open Options and press the SCREEN ROTATION button to pick TATE LEFT or
   TATE RIGHT. The picture turns 90 degrees on your landscape screen: with TATE LEFT the top of the game is on the
   left of your screen, with TATE RIGHT it is on the right. Mouse and touch follow the turn.
   Controls: Options > Controls > KEYS. Tap a box, then press the key or pad button. MATCH SCREEN sets the arrows to follow the
   turned picture (for example TATE RIGHT: Up arrow steers left). DEFAULTS restores the normal keys.
-  If you rotate the display in your OS settings instead, leave SCREEN on STANDARD and use --fullscreen.
+  If you rotate the display in your OS settings instead, leave SCREEN ROTATION on STANDARD and use --fullscreen.
   On Linux with X11 a rotated touchscreen may need `xinput map-to-output`.
 
 macOS: opening the app the first time

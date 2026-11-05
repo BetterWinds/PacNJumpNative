@@ -392,10 +392,11 @@ static void draw_menu(SDL_Renderer *r) {
 #ifdef PNJ_DESKTOP
         ftext(r, "FULLSCREEN", 20, 119, 11, row_rgb(H_FS, 0xaaaaaa), 1, 1);
         btn(r, fs_state ? "ON" : "OFF", 150, 98, 164, 38, H_FS, fs_state ? 0xffe07a : menu_fill(H_FS, 0xb4b4d2), 12, 0);
-        ftext(r, "SCREEN", 20, 179, 11, row_rgb(H_ORIENT, 0xaaaaaa), 1, 1);
+        ftext(r, "SCREEN", 20, 169, 11, row_rgb(H_ORIENT, 0xaaaaaa), 1, 1);
+        ftext(r, "ROTATION", 20, 187, 11, row_rgb(H_ORIENT, 0xaaaaaa), 1, 1);
         btn(r, orient_name(SV.orient), 150, 158, 164, 38, H_ORIENT, menu_fill(H_ORIENT, 0xb4b4d2), 12, 0);
         ftext(r, "SCALE", 20, 239, 11, row_rgb(H_SCALE, 0xaaaaaa), 1, 1);
-        btn(r, SV.intscale ? "PIXEL" : "SMOOTH", 150, 218, 164, 38, H_SCALE, menu_fill(H_SCALE, 0xb4b4d2), 12, 0);
+        btn(r, SV.intscale ? "INT SCALE" : "SMOOTH", 150, 218, 164, 38, H_SCALE, menu_fill(H_SCALE, 0xb4b4d2), 12, 0);
         ftext(r, "HDR", 20, 299, 11, row_rgb(H_HDR, 0xaaaaaa), 1, 1);
         btn(r, SV.hdr ? "ON" : "OFF", 150, 278, 164, 38, H_HDR, SV.hdr ? 0xffe07a : menu_fill(H_HDR, 0xb4b4d2), 12, 0);
         { char hb[40];
