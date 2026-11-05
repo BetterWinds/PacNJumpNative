@@ -1,6 +1,6 @@
 # HDR and the SDL3 move
 
-Status: the desktop shell runs on SDL3 (branch `sdl3`, SDL 3.4.20 in `third_party/SDL3`) and there is a first HDR pass. The HDR part has only been compiled and run on a non-HDR display here. It needs a look on a real HDR screen. Android is still on SDL2 and is not on this branch.
+Status: the desktop shell and the Android project both run on SDL3 (branch `sdl3`, SDL 3.4.20 in `third_party/SDL3`) and there is a first HDR pass. The HDR part has only been compiled and run on a non-HDR display here. It needs a look on a real HDR screen. The Android build is only verified by CI so far (CI uploads a test APK on this branch), not yet run on the LG G8.
 
 ## What is in the branch
 

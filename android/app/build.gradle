@@ -11,16 +11,17 @@ android {
     if (buildAsApplication) {
         namespace "org.libsdl.app"
     }
-    compileSdkVersion 34
+    compileSdkVersion 35
+    ndkVersion "28.2.13676358"
     defaultConfig {
         applicationId "com.jon.pnjnative"
         minSdkVersion 21
-        targetSdkVersion 34
+        targetSdkVersion 35
         versionCode 1
         versionName "1.0"
         externalNativeBuild {
             cmake {
-                arguments "-DANDROID_APP_PLATFORM=android-21", "-DANDROID_STL=c++_static", "-DPNJ_BYO=" + (project.hasProperty('BYO') ? "ON" : "OFF")
+                arguments "-DANDROID_PLATFORM=android-21", "-DANDROID_STL=c++_static", "-DPNJ_BYO=" + (project.hasProperty('BYO') ? "ON" : "OFF")
                 abiFilters 'arm64-v8a'   // add 'armeabi-v7a' for old 32-bit phones
             }
         }

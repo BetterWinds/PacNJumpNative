@@ -14,7 +14,7 @@ if(PNJ_BYO)
     target_compile_definitions(main PRIVATE PNJ_BYO=1)   # no game data compiled in: maps come from the imported pack
 endif()
 target_include_directories(main PRIVATE ${PNJ_NATIVE}/core ${PNJ_NATIVE}/third_party/stb)
-target_link_libraries(main SDL2 m)
+target_link_libraries(main PRIVATE SDL3::SDL3 m)
 if(ANDROID)
     target_link_libraries(main log)
 endif()

@@ -1,4 +1,4 @@
-/* Pac'N-Jump SDL3 shell: desktop (the Android project is still on the SDL2 branch).
+/* Pac'N-Jump SDL3 shell: desktop and Android.
  * Renders the core's draw list with the original sprite atlas (assets/ folder, bundled into the APK by Gradle),
  * the scrolling background and the HUD. Menus, pause screen and audio are not in the native build yet.
  *

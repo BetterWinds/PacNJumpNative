@@ -1,4 +1,4 @@
-# Desktop build (Windows, macOS, Linux). This branch is on SDL3; the Android project (android/) is still SDL2 and is not part of this branch yet.
+# Desktop build (Windows, macOS, Linux). This branch is on SDL3, including the Android project (android/).
 #   cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 # SDL3 comes from the submodule in third_party/SDL3 when it has been checked out (static link, one self-contained binary),
 # otherwise from the system (find_package). Force the system one with -DPNJ_SYSTEM_SDL=ON.
