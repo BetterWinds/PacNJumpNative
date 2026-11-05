@@ -103,6 +103,15 @@ To compile the 42 maps into the binary for a personal build, run `python tools/g
 
 No art, sound, level data, sprite table or Help text. What is in the repo is the game's rules written as C (physics constants, platform and enemy generator tables, scoring) after watching how the original behaves, plus short UI labels and stage names.
 
+## Code signing policy
+
+The Windows exe is built from this repo by GitHub Actions (`.github/workflows/desktop.yml`) and is meant to be signed through the SignPath Foundation's free program for open source projects. Releases up to now are not signed.
+
+- Authors, reviewers and approvers: Jon Anderson ([@heyjonanderson](https://github.com/heyjonanderson)), who owns the repo and signs off on every release before it is signed.
+- Only artifacts built from this repo's source are signed.
+
+Privacy: this program will not transfer any information to other networked systems unless specifically requested by the user.
+
 ## License
 
 MIT, for the code in this repo (see LICENSE). It does not cover the original game, which belongs to its owners. Not affiliated with Namco or Bandai Namco.
