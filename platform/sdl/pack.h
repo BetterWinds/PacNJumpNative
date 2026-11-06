@@ -31,11 +31,11 @@ static unsigned char *pack_read(const char *name, size_t *size) {
 static int pack_has(const char *name) { for (int i = 0; i < PKN; i++) if (!strcmp(PK[i].name, name)) return 1; return 0; }
 
 /* Where the pack and the save file live. Windows and Linux: next to the program when that folder is writable (everything stays in one
-   folder, nothing in AppData), otherwise the per-user data folder. macOS, Android and iOS always use the per-user folder (the app bundle is not a place to write). */
+   folder, nothing in AppData), otherwise the per-user data folder. macOS, Android, iOS and Vita always use the per-user folder (the app bundle is not a place to write). */
 static char data_base[600];
 static const char *data_dir(void) {
     static int done; if (done) return data_base; done = 1;
-#if !defined(__ANDROID__) && !defined(__APPLE__)
+#if !defined(__ANDROID__) && !defined(__APPLE__) && !defined(__vita__)
     const char *bp = SDL_GetBasePath();
     if (bp) {
         char t[700]; snprintf(t, sizeof t, "%spnj.tmp", bp);
