@@ -30,11 +30,20 @@ static unsigned char *pack_read(const char *name, size_t *size) {
 }
 static int pack_has(const char *name) { for (int i = 0; i < PKN; i++) if (!strcmp(PK[i].name, name)) return 1; return 0; }
 
+#ifdef PNJ_N3DS
+#include <sys/stat.h>
+#endif
 /* Where the pack and the save file live. Windows and Linux: next to the program when that folder is writable (everything stays in one
    folder, nothing in AppData), otherwise the per-user data folder. macOS, Android, iOS and Vita always use the per-user folder (the app bundle is not a place to write). */
 static char data_base[600];
 static const char *data_dir(void) {
     static int done; if (done) return data_base; done = 1;
+#ifdef PNJ_N3DS
+    /* fixed folder on the SD card, made here: SDL's pref path was coming back empty on the 3DS */
+    snprintf(data_base, sizeof data_base, "sdmc:/3ds/pacnjump/");
+    mkdir("sdmc:/3ds", 0777); mkdir("sdmc:/3ds/pacnjump", 0777);
+    return data_base;
+#endif
 #if !defined(__ANDROID__) && !defined(__APPLE__) && !defined(__vita__) && !defined(PNJ_N3DS)
     const char *bp = SDL_GetBasePath();
     if (bp) {

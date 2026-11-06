@@ -316,7 +316,11 @@ static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet
 #else
       tf_text(r, "ON THE VITA", 160, 202, 2, 255, 224, 122);
 #endif
+#ifdef PNJ_N3DS
+      tf_text(r, path, 160, 262, 2, 255, 255, 255);
+#else
       tf_text(r, path, 160, 262, 1, 255, 255, 255);
+#endif
       tf_text(r, "THE ORIGINAL ANDROID FILE", 160, 320, 1, 170, 170, 190);
       tf_text(r, "THE GAME FINDS IT BY ITSELF", 160, 340, 1, 170, 170, 190); }
     return;
