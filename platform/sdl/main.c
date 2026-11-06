@@ -675,9 +675,10 @@ static void dc_boot_tick(const char *what) { ld_done++; dc_loading(what); }
 static void new_game(uint32_t seed, int stage) {
 #ifdef PNJ_DC
     if (dc_rr) {                                         /* this stage's two sheets and its music, now rather than mid-game */
-        save_commit(); audio_music(""); ld_total = 0; ld_note = 0; dc_loading("GETTING THE STAGE READY");
+        save_commit(); audio_music(""); dc_audio_hush(); ld_total = 0; ld_note = 0; dc_loading("GETTING THE STAGE READY");
         char tr[16]; snprintf(tr, sizeof tr, "bgm%d", stage + 2);
-        get_tex(dc_rr, 5 + 2 * stage); get_tex(dc_rr, 6 + 2 * stage); audio_music_prefetch(tr);
+        get_tex(dc_rr, 5 + 2 * stage); get_tex(dc_rr, 6 + 2 * stage); audio_music_prefetch(tr);      /* normally already resident: every sheet is loaded at start-up */
+        dc_audio_unhush();
     }
 #endif
     cur_stage = stage; pnj_new(&G, seed, stage); IN.ramp = 0; touch_dir = 0; paused = 0;
@@ -989,10 +990,10 @@ int main(int argc, char *argv[]) {
 #ifdef PNJ_DC
     dc_rr = r;
     if (!need_data) {                                    /* sound, music and the sheets every menu uses: load them now behind a loading screen, so no menu hitches later */
-        ld_done = 0; ld_total = 25 + 2 + 5; ld_note = 1; boot_cb = dc_boot_tick; dc_loading("STARTING");
-        audio_init(); boot_cb = NULL;
-        for (int i = 0; i < 5; i++) { static const char *const nm[] = { "TITLE", "LOGO", "MENUS", "STAGE PICKER", "CHARACTERS" }; dc_loading(nm[i]); get_tex(r, i); ld_done++; }
-        dc_loading("DONE"); ld_note = 0;
+        ld_done = 0; ld_total = 25 + 2 + PNJ_NTEX; ld_note = 1; boot_cb = dc_boot_tick; dc_loading("STARTING");
+        audio_init(); boot_cb = NULL; dc_audio_hush();   /* nothing refills the sound stream while this screen waits */
+        for (int i = 0; i < PNJ_NTEX; i++) { dc_loading("GRAPHICS"); get_tex(r, i); ld_done++; }   /* all of them: with the VQ sheets they fit in video memory together, so no menu or stage change reads the disc */
+        dc_loading("DONE"); ld_note = 0; dc_audio_unhush();
     } else audio_init();
 #endif
 #if !defined(__ANDROID__) && !defined(__vita__) && !defined(PNJ_N3DS) && !defined(PNJ_DC)

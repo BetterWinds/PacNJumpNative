@@ -247,6 +247,10 @@ static bool SDL_PauseAudioStreamDevice(SDL_AudioStream *s) { s->run = 0; return 
 #define SDL_GetAudioStreamDevice(s) 1u
 #define SDL_GetCurrentAudioDriver() "kos"
 static void dc_audio_poll(void) { if (dc_aud.cb) snd_stream_poll(dc_aud.h); }
+/* A loading screen blocks the main loop for a while, and nothing refills the stream meanwhile: it would play the last 93 ms over and over. Stop it for the
+ * wait and start it again afterwards (it asks the mixer for fresh data when it starts). */
+static void dc_audio_hush(void) { if (dc_aud.cb) snd_stream_stop(dc_aud.h); }
+static void dc_audio_unhush(void) { if (dc_aud.cb) snd_stream_start(dc_aud.h, 44100, 1); }
 
 #include "dc_gfx.h"
 
