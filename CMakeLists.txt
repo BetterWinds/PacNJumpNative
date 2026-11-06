@@ -97,9 +97,11 @@ if(NINTENDO_3DS OR CMAKE_SYSTEM_NAME STREQUAL "Nintendo3DS")
   target_compile_definitions(pacnjump PRIVATE PNJ_N3DS=1)
   set(PNJ_3DS_TEX_FLIP 0 CACHE STRING "vertical flip in the texture upload copy (0 or 1)")
   target_compile_definitions(pacnjump PRIVATE PNJ_N3DS_TEX_FLIP=${PNJ_3DS_TEX_FLIP})
-  target_include_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/include)
-  target_link_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/lib)
-  target_link_libraries(pacnjump PRIVATE citro2d citro3d ctru m)
+  # OpenDSP (BSD-2-Clause, github.com/Cellenseres/OpenDSP) stands in for the dumped dspfirm.cdc, so sound works without dumping the firmware.
+  # CI builds and installs it into portlibs before this configure runs.
+  target_include_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/include $ENV{DEVKITPRO}/portlibs/3ds/include)
+  target_link_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/lib $ENV{DEVKITPRO}/portlibs/3ds/lib)
+  target_link_libraries(pacnjump PRIVATE opendsp citro2d citro3d ctru m)
   ctr_generate_smdh(pacnjump.smdh NAME "Pac'N-Jump" DESCRIPTION "Native port (bring your own APK)" AUTHOR "Jon Anderson"
     ICON ${CMAKE_SOURCE_DIR}/packaging/n3ds/icon.png)
   ctr_create_3dsx(pacnjump SMDH pacnjump.smdh)

@@ -21,6 +21,15 @@ jobs:
           (dkp-pacman -Sy --noconfirm --needed 3ds-dev || true)
           apt-get update && apt-get install -y --no-install-recommends cmake ninja-build git ca-certificates
           ls $DEVKITPRO/libctru/lib | head; ls $DEVKITPRO/cmake
+      - name: OpenDSP
+        run: |
+          export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
+          export DEVKITARM=$DEVKITPRO/devkitARM
+          apt-get install -y --no-install-recommends python3
+          git clone https://github.com/Cellenseres/OpenDSP /tmp/opendsp
+          git -C /tmp/opendsp checkout a15c8615c1659f34bfb2b38df69a9860f4cc7080
+          make -C /tmp/opendsp/library install
+          ls $DEVKITPRO/portlibs/3ds/lib | grep opendsp
       - name: Version
         run: |
           if [ "${{ github.ref_type }}" = tag ]; then v="${{ github.ref_name }}"; else v="b${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)"; fi

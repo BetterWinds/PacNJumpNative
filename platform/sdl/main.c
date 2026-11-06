@@ -13,6 +13,7 @@
 #include <SDL3/SDL_main.h>
 #ifdef PNJ_N3DS
 #include "../n3ds/n3ds_gfx.h"        /* swaps SDL's window and renderer calls for citro2d; see that file */
+#include <opendsp.h>                 /* open DSP firmware: ndsp works without a dumped dspfirm.cdc */
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -704,6 +705,9 @@ int main(int argc, char *argv[]) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
 #endif
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
+#ifdef PNJ_N3DS
+    { Result orc = opendspInit(); SDL_Log("opendsp: init %08lX%s", (unsigned long)orc, R_SUCCEEDED(orc) ? " (ok)" : " (falling back to dspfirm.cdc)"); }   /* SDL's audio backend then finds ndsp already running */
+#endif
     no_bundle = getenv("PNJ_NO_BUNDLE") != NULL;
     if (pack_find(pack_arg)) { pack_load_maps(); SDL_Log("game data pack: %s (%d files, %d maps)", pack_path, PKN, PK_NMAPS); }
     data_loaded();
