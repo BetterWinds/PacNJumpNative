@@ -101,6 +101,16 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { path: dl, merge-multiple: true }
+      - name: Check the release files hold no game data
+        run: |
+          set -e
+          ls -l dl
+          test "$(ls dl | wc -l)" -eq 3 || { echo "expected 3 release files"; exit 1; }
+          for f in dl/*; do
+            case "$f" in *.zip) list=$(unzip -Z1 "$f");; *.tar.gz) list=$(tar tzf "$f");; *) echo "unexpected file $f"; exit 1;; esac
+            if echo "$list" | grep -qiE "pnj\.pack|sysparts|\.apk$|\.ogg$|\.wav$|\.3gp$"; then echo "$f contains game data, refusing to publish"; echo "$list"; exit 1; fi
+            test "$(stat -c %s "$f")" -lt 8000000 || { echo "$f is over 8 MB, the game data may be in it"; exit 1; }
+          done
       - uses: softprops/action-gh-release@v2
         with:
           body: |
