@@ -132,10 +132,11 @@ static void SDLCALL audio_sdl_cb(void *ud, SDL_AudioStream *st, int additional, 
     }
 }
 static void audio_init(void) {
-    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) return;
+    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) { SDL_Log("audio: init failed: %s", SDL_GetError()); return; }
     SDL_AudioSpec want = { SDL_AUDIO_S16, 2, 44100 };
     aud_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, audio_sdl_cb, NULL);
-    if (!aud_stream) return;
+    if (!aud_stream) { SDL_Log("audio: no output device: %s (driver %s)", SDL_GetError(), SDL_GetCurrentAudioDriver()); return; }
+    SDL_Log("audio: open, driver %s", SDL_GetCurrentAudioDriver());
     aud_dev = SDL_GetAudioStreamDevice(aud_stream);
     audio_load_all();
     SDL_ResumeAudioStreamDevice(aud_stream);
