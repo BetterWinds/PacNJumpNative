@@ -18,7 +18,7 @@ typedef struct { const sfx_buf *s; Uint32 pos; } voice;
 static SDL_AudioStream *aud_stream; static SDL_AudioDeviceID aud_dev;
 static sfx_buf SFXB[32];
 static voice voices[16];
-static unsigned char *mus_data; static stb_vorbis *mus_vb; static char mus_name[32], mus_want[32];
+static stb_vorbis *mus_vb; static char mus_name[32], mus_want[32];
 static short *mus_pcm; static Uint32 mus_frames, mus_pos;      /* a track stored as WAV (the web builder decodes the AAC jingle to this) */
 static int sfx_on = 1, mus_on = 1;
 static float mus_vol = 0.55f, sfx_vol = 0.8f;
@@ -56,28 +56,61 @@ static void audio_load_sfx(int slot, const char *file) {
     free(d);
 }
 
-static void audio_music_close(void) {
-    if (mus_vb) { stb_vorbis_close(mus_vb); mus_vb = 0; }
-    free(mus_data); mus_data = 0; SDL_free(mus_pcm); mus_pcm = 0; mus_frames = mus_pos = 0; mus_name[0] = 0;
+/* Music tracks are cached (raw ogg bytes, or decoded PCM for a wav track) so switching to the power-up jingle and back
+ * does not hit the pack file or the decoder mid-game. Reading and decoding happen with the audio NOT locked; only the
+ * pointer swap is under the lock, so the audio callback never waits on slow SD reads (the 3DS power-up stutter). */
+typedef struct { char name[32]; unsigned char *ogg; size_t n; short *pcm; Uint32 frames; } mus_ent;
+static mus_ent MC[4]; static mus_ent *mus_cur; static int mc_next;
+static void mus_ent_free(mus_ent *e) { free(e->ogg); SDL_free(e->pcm); memset(e, 0, sizeof *e); }
+static mus_ent *mus_find(const char *track) {
+    for (int i = 0; i < 4; i++) if (MC[i].name[0] && !strcmp(MC[i].name, track)) return &MC[i];
+    return 0;
 }
-/* a track is audio/<name>.ogg, or audio/<name>.wav. If it is not in the pack the current music keeps playing. */
-static void audio_music_open(const char *track) {     /* main thread only; audio is locked by the caller */
-    if (!track[0]) { audio_music_close(); return; }
-    char name[64]; size_t n; snprintf(name, sizeof name, "audio/%s.ogg", track);
+static int mus_fetch(const char *track, mus_ent *o) {        /* slow part: file read + decode, no lock held */
+    char name[64]; size_t n; memset(o, 0, sizeof *o);
+    snprintf(name, sizeof name, "audio/%s.ogg", track);
     unsigned char *d = read_asset(name, &n);
-    if (d) {
-        int err = 0; stb_vorbis *vb = stb_vorbis_open_memory(d, (int)n, &err, 0);
-        if (!vb) { free(d); return; }
-        audio_music_close(); mus_data = d; mus_vb = vb; snprintf(mus_name, sizeof mus_name, "%s", track); return;
-    }
+    if (d) { o->ogg = d; o->n = n; snprintf(o->name, sizeof o->name, "%s", track); return 1; }
     snprintf(name, sizeof name, "audio/%s.wav", track);
-    d = read_asset(name, &n); if (!d) return;
-    SDL_AudioSpec sp, dst = { SDL_AUDIO_S16, 2, 44100 }; Uint8 *buf = 0, *cb = 0; Uint32 len = 0; int cl = 0;
+    d = read_asset(name, &n); if (!d) return 0;
+    SDL_AudioSpec sp, dst = { SDL_AUDIO_S16, 2, 44100 }; Uint8 *buf = 0, *cb = 0; Uint32 len = 0; int cl = 0, ok = 0;
     if (SDL_LoadWAV_IO(SDL_IOFromConstMem(d, n), true, &sp, &buf, &len) && len > 0 && SDL_ConvertAudioSamples(&sp, buf, (int)len, &dst, &cb, &cl) && cl >= 4) {
-        audio_music_close(); mus_pcm = (short *)cb; mus_frames = (Uint32)cl / 4; mus_pos = 0; snprintf(mus_name, sizeof mus_name, "%s", track);
+        o->pcm = (short *)cb; o->frames = (Uint32)cl / 4; snprintf(o->name, sizeof o->name, "%s", track); ok = 1;
     } else SDL_free(cb);
     if (buf) SDL_free(buf);
-    free(d);
+    free(d); return ok;
+}
+static mus_ent *mus_insert(const mus_ent *src) {             /* audio locked by the caller; never evicts the entry that is playing */
+    int i = mc_next; for (int k = 0; k < 4; k++, i = (i + 1) & 3) if (&MC[i] != mus_cur) break;
+    mc_next = (i + 1) & 3; mus_ent_free(&MC[i]); MC[i] = *src; return &MC[i];
+}
+static void audio_music_stop(void) {                         /* audio locked by the caller */
+    if (mus_vb) { stb_vorbis_close(mus_vb); mus_vb = 0; }
+    mus_cur = 0; mus_pcm = 0; mus_frames = mus_pos = 0; mus_name[0] = 0;
+}
+static void audio_music_flush(void) {                        /* a new pack arrived: forget everything cached */
+    if (aud_stream) SDL_LockAudioStream(aud_stream);
+    audio_music_stop(); for (int i = 0; i < 4; i++) mus_ent_free(&MC[i]);
+    if (aud_stream) SDL_UnlockAudioStream(aud_stream);
+}
+/* a track is audio/<name>.ogg, or audio/<name>.wav. If it is not in the pack the current music keeps playing. */
+static void audio_music_open(const char *track) {            /* main thread only; call with the audio NOT locked */
+    if (!track[0]) { SDL_LockAudioStream(aud_stream); audio_music_stop(); SDL_UnlockAudioStream(aud_stream); return; }
+    mus_ent *e = mus_find(track), tmp; stb_vorbis *vb = 0;
+    if (!e) { if (!mus_fetch(track, &tmp)) return; }
+    const mus_ent *src = e ? e : &tmp;
+    if (src->ogg) { int err = 0; vb = stb_vorbis_open_memory(src->ogg, (int)src->n, &err, 0); if (!vb) { if (!e) free(tmp.ogg); return; } }
+    SDL_LockAudioStream(aud_stream);
+    if (!e) e = mus_insert(&tmp);
+    if (mus_vb) { stb_vorbis_close(mus_vb); mus_vb = 0; }
+    mus_cur = e; mus_pcm = e->pcm; mus_frames = e->frames; mus_pos = 0; mus_vb = vb;
+    snprintf(mus_name, sizeof mus_name, "%s", track);
+    SDL_UnlockAudioStream(aud_stream);
+}
+static void audio_music_prefetch(const char *track) {        /* warm the cache so the first power-up does not hitch */
+    if (mus_find(track)) return;
+    mus_ent tmp; if (!mus_fetch(track, &tmp)) return;
+    SDL_LockAudioStream(aud_stream); mus_insert(&tmp); SDL_UnlockAudioStream(aud_stream);
 }
 
 static void audio_cb(void *ud, Uint8 *out, int bytes) {
@@ -122,6 +155,7 @@ static void audio_load_all(void) {      /* (re)loads every effect; used at start
     audio_load_sfx(A_GAMEOVER, "gameover"); audio_load_sfx(A_HISCORE, "hiscore"); audio_load_sfx(A_EAT_ITEM, "eat_item");
     audio_load_sfx(A_WARN, "st8_warning");
     if (aud_stream) SDL_UnlockAudioStream(aud_stream);
+    if (aud_stream) audio_music_prefetch("wakawaka");
 }
 /* SDL3 audio streams: SDL asks for more data and we feed it from the same mixer callback the SDL2 build used */
 static void SDLCALL audio_sdl_cb(void *ud, SDL_AudioStream *st, int additional, int total) {
@@ -153,8 +187,6 @@ static void audio_music(const char *track) {            /* "" = stop; no-op if a
     if (!aud_stream || !strcmp(track, mus_want)) return;
     snprintf(mus_want, sizeof mus_want, "%s", track);
     if (!strcmp(track, mus_name)) return;                 /* already playing it (e.g. the jingle was missing and the stage music carried on) */
-    SDL_LockAudioStream(aud_stream);
     audio_music_open(track);
-    SDL_UnlockAudioStream(aud_stream);
 }
 static void audio_pause(int p) { if (aud_stream) { if (p) SDL_PauseAudioStreamDevice(aud_stream); else SDL_ResumeAudioStreamDevice(aud_stream); } }

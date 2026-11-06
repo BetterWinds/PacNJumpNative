@@ -195,7 +195,7 @@ static int need_data = 0;
 static char imp_msg[300];
 static void reset_assets(void) {                      /* after a new pack arrives: drop cached textures, reload sounds */
     for (int i = 0; i < PNJ_NTEX; i++) { if (TEX[i]) SDL_DestroyTexture(TEX[i]); TEX[i] = 0; TEXW[i] = 0; }
-    if (aud_dev) { mus_want[0] = 0; audio_load_all(); }
+    if (aud_dev) { mus_want[0] = 0; audio_music_flush(); audio_load_all(); }
 }
 static int data_present(void) { size_t n; unsigned char *b = read_asset("sysparts.png", &n); free(b); return b != NULL; }
 static int do_import(const char *apk, const char *outpath) {
