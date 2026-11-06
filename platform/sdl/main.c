@@ -15,6 +15,9 @@
 #include "../n3ds/n3ds_gfx.h"        /* swaps SDL's window and renderer calls for citro2d; see that file */
 #include <opendsp.h>                 /* open DSP firmware: ndsp works without a dumped dspfirm.cdc */
 #endif
+#ifndef PNJ_DEPTH
+#define PNJ_DEPTH(r, z) ((void)0)       /* stereo depth is a 3DS thing; see n3ds_gfx.h */
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,7 +157,9 @@ static void draw_bg(SDL_Renderer *r) {
         a = (G.stage == 7 || G.stage == 5) ? 1 : s;
     }
     float g = hdr_gain; hdr_gain = 1.0f;                       /* the background keeps its normal brightness; only the foreground glow goes past white */
+    { double hz = pnj_height(&G) / 90000.0; PNJ_DEPTH(r, -(0.5 + 0.5 * (hz > 1 ? 1 : hz))); }      /* far behind the screen, and further back the higher you climb */
     for (int i = 0; i < n; i++) spr(r, id, 0, 0, 0, 160, ys[i] + hh / 2.0, 0, 1, a, add, cr, cg, cb);
+    PNJ_DEPTH(r, 0);
     hdr_gain = g;
 }
 
@@ -170,7 +175,9 @@ static void draw_hud(SDL_Renderer *r) {
     double ex = draw_digits(r, pnj_height(&G), 0, 35);
     SPR(r, 59, ex + 2 + 26, 42 + 12.5);
     int tui = touch_ui_on();
-    if (tui) SPR(r, 65, 160, 19);                          /* pause button (the tap area stays live when hidden) */
+#ifndef PNJ_N3DS
+    if (tui) SPR(r, 65, 160, 19);                          /* pause button (the tap area stays live when hidden); the 3DS pauses with Start only */
+#endif
     if (!tui) return;
     if (ctrl_analog) {
         spr(r, 75, 0, 0, 0, 160, 432, 0, 1, 0.4, 1, 1, 0.9, 0.4);
@@ -489,7 +496,9 @@ static void draw_top_menu(SDL_Renderer *rr) {
     G.stage = sel_stage; G.L = ui_L; G.cam594 = (fx)(-ui_L * 4); G.peak = 0; G.p.power = 0;
     SDL_SetRenderDrawColor(rr, 0, 0, 0, 255); SDL_RenderClear(rr);
     draw_bg(rr);
+    PNJ_DEPTH(rr, 0.5);
     if (ui_mode == UI_TITLE || ui_mode == UI_MENU) draw_logo(rr, 0, 1);
+    PNJ_DEPTH(rr, 0);
 }
 /* texture viewer (L+R): top screen shows the whole sheet as the GPU holds it, touch screen a 1:1 close-up of one quarter (L+X changes it) */
 static void draw_texview(SDL_Renderer *rr) {
@@ -504,13 +513,18 @@ static void draw_texview(SDL_Renderer *rr) {
     }
 }
 static void present_frame(SDL_Renderer *rr) {
+    int stereo = pnj_gfx_stereo(rr);
     pnj_gfx_begin(rr);
     if (pnj_dbg_tex >= 0) { draw_texview(rr); pnj_gfx_end(rr); return; }
     int menu = n3ds_menu_mode();
-    for (int s = 0; s < 2; s++) {
+    for (int pass = 0; pass < 3; pass++) {                                    /* top left eye, top right eye (3D slider up only), touch screen */
+        int s = pass == 2, eye = pass == 0 ? (stereo ? -1 : 0) : pass == 1 ? 1 : 0;
+        if (pass == 1 && !stereo) continue;
+        rr->eye = eye;
         pnj_gfx_screen(rr, s, menu);
         if (menu && s == 0) draw_top_menu(rr); else draw_current(rr);        /* playing: the same field twice, top rows 0-239, touch screen 240-479 */
     }
+    rr->eye = 0;
     pnj_gfx_end(rr);
 }
 static void mouse_field(SDL_Window *w, SDL_Renderer *rr, float x, float y, float *lx, float *ly) { (void)w; (void)rr; *lx = x; *ly = y; }
@@ -555,6 +569,22 @@ static void data_loaded(void) {
     help_load();
 }
 static void new_game(uint32_t seed, int stage) { cur_stage = stage; pnj_new(&G, seed, stage); IN.ramp = 0; touch_dir = 0; paused = 0; }
+#ifdef PNJ_N3DS
+/* stereo depth by draw-list layer: platforms sit on the screen, pickups and enemies float in front, the player a little more, effects pop out.
+ * Eaten items burst toward you, and on a power-up the enemies jump forward. */
+static double draw_depth(const pnj_draw *d) {
+    int sp = d->sprite;
+    if (d->layer == 1) return 0.0;
+    if (d->layer == 2) {
+        if ((sp >= 169 && sp <= 173) || (sp >= 201 && sp <= 205)) return 0.9;        /* defeated enemy / pickup burst */
+        double z = 0.35 + (G.p.power ? 0.35 : 0.0);
+        return d->blend ? z + 0.35 : z;
+    }
+    if (d->layer == 3) return 0.55;
+    if (d->layer >= 4) return 0.8;
+    return 0.0;
+}
+#endif
 static void render(SDL_Renderer *r) {
     nhits = 0;
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
@@ -563,12 +593,17 @@ static void render(SDL_Renderer *r) {
     pnj_build_draw(&G);
     for (int i = 0; i < G.ndraw; i++) {
         const pnj_draw *d = &G.draw[i];
+#ifdef PNJ_N3DS
+        PNJ_DEPTH(r, draw_depth(d));
+#endif
         spr(r, d->sprite, d->col, d->row, d->vrow, d->x, d->y, d->rot, d->scale, d->a / 255.0, d->blend,
             d->r / 255.0, d->g / 255.0, d->b / 255.0);
     }
+    PNJ_DEPTH(r, 0.3);
     draw_hud(r);
+    PNJ_DEPTH(r, 0);
 #ifdef PNJ_N3DS
-    if (paused && ui_mode == UI_PLAY && !pnj_top_pass) { if (touch_ui_on()) SPR(r, 65, 160, 19); draw_pause(r); }
+    if (paused && ui_mode == UI_PLAY && !pnj_top_pass) draw_pause(r);
 #else
     if (paused && ui_mode == UI_PLAY) { if (touch_ui_on()) SPR(r, 65, 160, 19); draw_pause(r); }
 #endif   /* Options and Help opened from the pause menu draw over the bare scene */
@@ -577,7 +612,9 @@ static void render(SDL_Renderer *r) {
 
 /* returns 1 if the touch was consumed by a HUD control */
 static int hud_touch(double lx, double ly) {
+#ifndef PNJ_N3DS
     if (fabs(lx - 160) <= 32 && ly <= 52) { paused = !paused; return 1; }
+#endif
     if (lx < 90 && ly < 32) { SV.analog = !SV.analog; save_apply(); save_write(); IN.active = 0; touch_dir = 0; return 1; }
     if (lx < 150 && ly >= 32 && ly < 72) { SV.snappy = !SV.snappy; save_apply(); save_write(); return 1; }
     return 0;

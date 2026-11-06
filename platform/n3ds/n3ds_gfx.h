@@ -24,7 +24,13 @@
 #define PNJ_N3DS_ROT_SIGN 1.0f
 #endif
 
-typedef struct { C3D_RenderTarget *scr[2]; u32 clr; int blend; int draw_add; float ox, oy, sc; int cur; } pnj_gfx;
+/* Stereo 3D: the top screen is drawn once per eye. Everything the shell draws has a depth dz (-1 far .. 0 on the screen .. +1 close); an eye
+ * moves a sprite sideways by -eye * dz * iod pixels (eye -1 = left, +1 = right, 0 = flat), so close things shift right in the left eye. iod is
+ * the 3D slider times PNJ_N3DS_DEPTH. */
+#ifndef PNJ_N3DS_DEPTH
+#define PNJ_N3DS_DEPTH 5.0f
+#endif
+typedef struct { C3D_RenderTarget *scr[2], *scr_r, *tgt; u32 clr; int blend; int draw_add; float ox, oy, sc; int cur; int eye; float dz, iod; } pnj_gfx;
 static int pnj_dbg_tex = -1, pnj_dbg_sub;    /* texture viewer: hold L and press R to step through the sheets, hold L and press X to move the close-up */
 static int pnj_top_pass;                      /* 1 while the top screen is drawn in menu mode: the game scene without the pause overlay */
 typedef struct { C3D_Tex tex; int w, h; int add; int alpha; int cr, cg, cb; } pnj_tex;
@@ -46,6 +52,7 @@ static pnj_gfx *pnj_gfx_open(void) {
     C2D_Prepare();
     g->scr[0] = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
     g->scr[1] = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
+    g->scr_r = C2D_CreateScreenTarget(GFX_TOP, GFX_RIGHT);       /* only drawn (and so only sent to the screen) while the 3D slider is up */
     g->clr = C2D_Color32(0, 0, 0, 255); g->blend = -1; g->draw_add = 0; g->cur = 0; g->sc = 1.0f;
     return g;
 }
@@ -56,17 +63,26 @@ static void pnj_gfx_blend(pnj_gfx *g, int add) {
     if (add) C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE, GPU_SRC_ALPHA, GPU_ONE);
     else C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
 }
-static void pnj_gfx_begin(pnj_gfx *g) { (void)g; C3D_FrameBegin(C3D_FRAME_SYNCDRAW); }
+/* Reads the 3D slider and switches the top screen between 2D and stereo. Returns 1 when the right eye has to be drawn too. libctru gives both eyes the
+ * same buffer in 2D mode, so the right-eye target must stay unused while the slider is off. */
+static int pnj_gfx_stereo(pnj_gfx *g) {
+    float sl = osGet3DSliderState(); int on = sl > 0.02f && g->scr_r != NULL;
+    if (gfxIs3D() != (on ? true : false)) gfxSet3D(on ? true : false);
+    g->iod = on ? sl * PNJ_N3DS_DEPTH : 0.0f;
+    return on;
+}
+static void pnj_gfx_begin(pnj_gfx *g) { g->eye = 0; g->dz = 0.0f; C3D_FrameBegin(C3D_FRAME_SYNCDRAW); }
 static void pnj_gfx_end(pnj_gfx *g) { (void)g; C3D_FrameEnd(0); }
 /* Playing: screen 0 (top, centred in 400 wide) shows field rows 0..239, screen 1 (touch) rows 240..479, both 1:1.
  * Menu mode: the whole 320x480 menu is drawn on the touch screen at half size, and the top screen shows the background or the paused game. */
 static void pnj_gfx_screen(pnj_gfx *g, int s, int menu) {
-    g->cur = s; g->sc = 1.0f;
+    g->cur = s; g->sc = 1.0f; g->dz = 0.0f;
+    g->tgt = (s == 0 && g->eye > 0) ? g->scr_r : g->scr[s];
     if (!menu) { g->ox = s == 0 ? 40.0f : 0.0f; g->oy = s == 0 ? 0.0f : -240.0f; }
     else if (s == 0) { g->ox = 40.0f; g->oy = 0.0f; }
     else { g->sc = 0.5f; g->ox = 80.0f; g->oy = 0.0f; }
-    C2D_TargetClear(g->scr[s], C2D_Color32(0, 0, 0, 255));
-    C2D_SceneBegin(g->scr[s]);
+    C2D_TargetClear(g->tgt, C2D_Color32(0, 0, 0, 255));
+    C2D_SceneBegin(g->tgt);
     g->blend = -1; pnj_gfx_blend(g, 0);
 }
 
@@ -76,11 +92,13 @@ static inline int pnj_f2b(float v) { return v <= 0 ? 0 : v >= 1 ? 255 : (int)(v 
 #define SDL_SetRenderDrawColor(r, R, G, B, A) pnj_set_color((r), (R), (G), (B), (A))
 #define SDL_SetRenderDrawColorFloat(r, R, G, B, A) pnj_set_color((r), pnj_f2b(R), pnj_f2b(G), pnj_f2b(B), pnj_f2b(A))
 #define SDL_SetRenderDrawBlendMode(r, m) ((r)->draw_add = ((m) == SDL_BLENDMODE_ADD))
-static void pnj_clear(pnj_gfx *g) { C2D_TargetClear(g->scr[g->cur], g->clr); }
+static void pnj_clear(pnj_gfx *g) { C2D_TargetClear(g->tgt, g->clr); }
+static inline float pnj_shift(const pnj_gfx *g) { return -(float)g->eye * g->dz * g->iod; }
+#define PNJ_DEPTH(r, z) ((r)->dz = (float)(z))
 #define SDL_RenderClear(r) pnj_clear(r)
 static void pnj_fill(pnj_gfx *g, const SDL_FRect *q) {
     pnj_gfx_blend(g, g->draw_add);
-    C2D_DrawRectSolid(q->x * g->sc + g->ox, q->y * g->sc + g->oy, 0.0f, q->w * g->sc, q->h * g->sc, g->clr);
+    C2D_DrawRectSolid(q->x * g->sc + g->ox + pnj_shift(g), q->y * g->sc + g->oy, 0.0f, q->w * g->sc, q->h * g->sc, g->clr);
 }
 #define SDL_RenderFillRect(r, q) pnj_fill((r), (q))
 static void pnj_rect_outline(pnj_gfx *g, const SDL_FRect *q) {
@@ -90,7 +108,7 @@ static void pnj_rect_outline(pnj_gfx *g, const SDL_FRect *q) {
 #define SDL_RenderRect(r, q) pnj_rect_outline((r), (q))
 static void pnj_line(pnj_gfx *g, float x0, float y0, float x1, float y1) {
     pnj_gfx_blend(g, g->draw_add);
-    C2D_DrawLine(x0 * g->sc + g->ox, y0 * g->sc + g->oy, g->clr, x1 * g->sc + g->ox, y1 * g->sc + g->oy, g->clr, 1.0f, 0.0f);
+    C2D_DrawLine(x0 * g->sc + g->ox + pnj_shift(g), y0 * g->sc + g->oy, g->clr, x1 * g->sc + g->ox + pnj_shift(g), y1 * g->sc + g->oy, g->clr, 1.0f, 0.0f);
 }
 #define SDL_RenderLine(r, a, b, c, d) pnj_line((r), (a), (b), (c), (d))
 
@@ -158,7 +176,7 @@ static void pnj_draw_tex(pnj_gfx *g, pnj_tex *t, const SDL_FRect *src, const SDL
     C2D_DrawParams p;
     /* citro2d puts the centre point at pos, not the top-left corner, so pos is the middle of the destination (spin about that point) */
     p.pos.w = dst->w * g->sc; p.pos.h = dst->h * g->sc;
-    p.pos.x = dst->x * g->sc + g->ox + p.pos.w * 0.5f; p.pos.y = dst->y * g->sc + g->oy + p.pos.h * 0.5f;
+    p.pos.x = dst->x * g->sc + g->ox + pnj_shift(g) + p.pos.w * 0.5f; p.pos.y = dst->y * g->sc + g->oy + p.pos.h * 0.5f;
     p.center.x = p.pos.w * 0.5f; p.center.y = p.pos.h * 0.5f;
     p.depth = 0.0f; p.angle = (float)(angle * 3.14159265358979 / 180.0) * PNJ_N3DS_ROT_SIGN;
     C2D_DrawImage(img, &p, &tint);
