@@ -6,6 +6,11 @@
 #include <ctype.h>
 #include <stdio.h>
 
+/* Progress for the loader screen. import_apk may run on its own thread; the UI only reads these two ints (permille done, and which step). */
+enum { IS_OPEN, IS_UNPACK, IS_SPRITES, IS_AUDIO, IS_WRITE, IS_DONE };
+static volatile int imp_pm = 0, imp_stage = IS_OPEN;
+static void imp_prog(int pm, int st) { imp_pm = pm; imp_stage = st; }
+
 typedef struct { char name[160]; Uint32 method, csize, usize, lho; } zip_ent;
 typedef struct { unsigned char *d; size_t n; zip_ent *e; int ne; } zip_t;
 typedef struct { char name[64]; unsigned char *d; size_t n; } imp_file;
@@ -19,7 +24,12 @@ static int zip_open(zip_t *z, const char *path) {
     Sint64 sz = SDL_GetIOSize(f);
     if (sz < 100) { SDL_CloseIO(f); return 0; }
     z->d = (unsigned char *)malloc((size_t)sz); z->n = (size_t)sz;
-    if (!z->d || SDL_ReadIO(f, z->d, (size_t)sz) != (size_t)sz) { SDL_CloseIO(f); free(z->d); z->d = 0; return 0; }
+    if (!z->d) { SDL_CloseIO(f); return 0; }
+    for (size_t got = 0; got < (size_t)sz; ) {                  /* in pieces, so the loader bar moves while a slow SD card is read */
+        size_t want = (size_t)sz - got; if (want > (256u << 10)) want = 256u << 10;
+        if (SDL_ReadIO(f, z->d + got, want) != want) { SDL_CloseIO(f); free(z->d); z->d = 0; return 0; }
+        got += want; imp_prog((int)(35 * got / (size_t)sz), IS_OPEN);
+    }
     SDL_CloseIO(f);
     size_t eo = 0; for (size_t i = z->n - 22; ; i--) { if (rd32(z->d + i) == 0x06054b50) { eo = i; break; } if (i == 0 || z->n - i > 70000) return 0; }
     int cnt = (int)rd16(z->d + eo + 10); size_t cd = rd32(z->d + eo + 16);
@@ -120,10 +130,6 @@ static char *dex_atlas(const unsigned char *d, size_t n, size_t *outn) {
     free(rows); return out;
 }
 
-/* Progress for the loader screen. import_apk may run on its own thread; the UI only reads these two ints (permille done, and which step). */
-enum { IS_OPEN, IS_UNPACK, IS_SPRITES, IS_AUDIO, IS_WRITE, IS_DONE };
-static volatile int imp_pm = 0, imp_stage = IS_OPEN;
-static void imp_prog(int pm, int st) { imp_pm = pm; imp_stage = st; }
 
 static void imp_add(imp_file **fl, int *n, int *cap, const char *name, unsigned char *d, size_t sz) {
     if (*n == *cap) { *cap = *cap ? *cap * 2 : 128; *fl = (imp_file *)realloc(*fl, (size_t)*cap * sizeof **fl); }
@@ -230,7 +236,13 @@ static int import_apk(const char *apk, const char *out_pack, char *err, size_t e
         fwrite("PNJPACK1", 1, 8, f); wr32(f, (Uint32)nf);
         Uint32 off = 12; for (int i = 0; i < nf; i++) off += 2 + (Uint32)strlen(fl[i].name) + 8;
         for (int i = 0; i < nf; i++) { Uint32 l = (Uint32)strlen(fl[i].name); wr16(f, l); fwrite(fl[i].name, 1, l, f); wr32(f, off); wr32(f, (Uint32)fl[i].n); off += (Uint32)fl[i].n; }
-        for (int i = 0; i < nf; i++) { fwrite(fl[i].d, 1, fl[i].n, f); if ((i & 7) == 0) imp_prog(800 + 190 * i / nf, IS_WRITE); }
+        size_t total = 1, done_b = 0; for (int i = 0; i < nf; i++) total += fl[i].n;
+        for (int i = 0; i < nf; i++) {                          /* 64 KB at a time, with the bar moving after each piece */
+            for (size_t o = 0; o < fl[i].n; ) {
+                size_t c = fl[i].n - o; if (c > (64u << 10)) c = 64u << 10;
+                fwrite(fl[i].d + o, 1, c, f); o += c; done_b += c; imp_prog(800 + (int)(190 * done_b / total), IS_WRITE);
+            }
+        }
         int bad = ferror(f); fclose(f);
         if (bad) { snprintf(err, errn, "write failed (disk full?)"); remove(tmp); goto done; }
         remove(out_pack);

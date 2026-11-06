@@ -119,15 +119,19 @@ static void pnj_line(pnj_gfx *g, float x0, float y0, float x1, float y1) {
 #ifndef PNJ_N3DS_TEX_FLIP
 #define PNJ_N3DS_TEX_FLIP 1          /* the image's top row ends up at v = 1; set to 0 if every sprite comes out upside down */
 #endif
-static pnj_tex *pnj_tex_make(const unsigned char *px, int w, int h, int shrink, int sharp) {
+/* padw x padh is the texture's size; the (shrunk) image sits in its top left corner and the rest is transparent. Normally the two are the same. */
+static pnj_tex *pnj_tex_make_pad(const unsigned char *px, int w, int h, int shrink, int sharp, int padw, int padh) {
     if (shrink < 1) shrink = 1;
     int dw = w / shrink, dh = h / shrink;
-    if (dw < 8 || dh < 8 || (dw & (dw - 1)) || (dh & (dh - 1)) || dw > 1024 || dh > 1024) return NULL;     /* the GPU needs powers of two */
+    if (padw < dw) padw = dw;
+    if (padh < dh) padh = dh;
+    if (padw < 8 || padh < 8 || (padw & (padw - 1)) || (padh & (padh - 1)) || padw > 1024 || padh > 1024) return NULL;     /* the GPU needs powers of two */
     pnj_tex *t = (pnj_tex *)calloc(1, sizeof *t); if (!t) return NULL;
-    if (!C3D_TexInit(&t->tex, (u16)dw, (u16)dh, GPU_RGBA8)) { free(t); return NULL; }
-    size_t bytes = (size_t)dw * dh * 4;
+    if (!C3D_TexInit(&t->tex, (u16)padw, (u16)padh, GPU_RGBA8)) { free(t); return NULL; }
+    size_t bytes = (size_t)padw * padh * 4;
     u32 *lin = (u32 *)linearAlloc(bytes);
     if (!lin) { C3D_TexDelete(&t->tex); free(t); return NULL; }
+    memset(lin, 0, bytes);
     for (int y = 0; y < dh; y++) for (int x = 0; x < dw; x++) {
         unsigned r, g, b, a;
         if (shrink > 1) {                                         /* alpha-weighted box average of a shrink x shrink block */
@@ -139,19 +143,20 @@ static pnj_tex *pnj_tex_make(const unsigned char *px, int w, int h, int shrink, 
             if (sa) { r = sr / sa; g = sg / sa; b = sb / sa; } else r = g = b = 0;
             a = sa / (unsigned)(shrink * shrink);
         } else { const unsigned char *p = px + ((size_t)y * w + x) * 4; r = p[0]; g = p[1]; b = p[2]; a = p[3]; }
-        lin[(size_t)y * dw + x] = (r << 24) | (g << 16) | (b << 8) | a;
+        lin[(size_t)y * padw + x] = (r << 24) | (g << 16) | (b << 8) | a;
     }
     GSPGPU_FlushDataCache(lin, bytes);
-    C3D_SyncDisplayTransfer(lin, GX_BUFFER_DIM(dw, dh), (u32 *)t->tex.data, GX_BUFFER_DIM(dw, dh),
+    C3D_SyncDisplayTransfer(lin, GX_BUFFER_DIM(padw, padh), (u32 *)t->tex.data, GX_BUFFER_DIM(padw, padh),
         GX_TRANSFER_FLIP_VERT(PNJ_N3DS_TEX_FLIP) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
         GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
     linearFree(lin);
     C3D_TexFlush(&t->tex);
     C3D_TexSetFilter(&t->tex, sharp ? GPU_NEAREST : GPU_LINEAR, sharp ? GPU_NEAREST : GPU_LINEAR);
     C3D_TexSetWrap(&t->tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-    t->w = dw; t->h = dh; t->add = 0; t->alpha = 255; t->cr = t->cg = t->cb = 255;
+    t->w = padw; t->h = padh; t->add = 0; t->alpha = 255; t->cr = t->cg = t->cb = 255;
     return t;
 }
+static pnj_tex *pnj_tex_make(const unsigned char *px, int w, int h, int shrink, int sharp) { return pnj_tex_make_pad(px, w, h, shrink, sharp, 0, 0); }
 static void pnj_tex_free(pnj_tex *t) { if (!t) return; C3D_TexDelete(&t->tex); free(t); }
 #define SDL_DestroyTexture(t) pnj_tex_free(t)
 #define SDL_SetTextureBlendMode(t, m) ((t)->add = ((m) == SDL_BLENDMODE_ADD))

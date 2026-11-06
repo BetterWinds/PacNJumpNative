@@ -99,7 +99,10 @@ static SDL_Texture *get_tex(SDL_Renderer *r, int i) {
     SDL_Texture *t = pnj_tex_make(px, w, h, half ? 2 : 1, 0); if (t) w = t->w;
     if (i == 2 && !FONTLITE && w == 512) {                  /* menus are drawn at half size: a pre-shrunk copy of the dotted font (16 px cells) stays readable */
         size_t rowb = (size_t)1024 * 4; unsigned char *fl = (unsigned char *)calloc(512, rowb);
-        if (fl && h >= 384) { memcpy(fl, px, (size_t)384 * rowb); FONTLITE = pnj_tex_make(fl, 1024, 512, 4, 0); FONTLITE8 = pnj_tex_make(fl, 1024, 512, 8, 0); }
+        /* The shrunk copies sit in the corner of a full 512 x 512 texture: on a real console the small textures (256 x 128, 128 x 64) came out scrambled while
+           the big sheets were fine. Create sdmc:/3ds/pacnjump/nolite to skip them and draw all text from the main sheet. */
+        FILE *nl = fopen("sdmc:/3ds/pacnjump/nolite", "rb"); int skip = nl != NULL; if (nl) fclose(nl);
+        if (fl && h >= 384 && !skip) { memcpy(fl, px, (size_t)384 * rowb); FONTLITE = pnj_tex_make_pad(fl, 1024, 512, 4, 0, 512, 512); FONTLITE8 = pnj_tex_make_pad(fl, 1024, 512, 8, 0, 512, 512); }
         free(fl);
     }
     (void)r;
@@ -269,6 +272,8 @@ static void tf_text(SDL_Renderer *r, const char *s, double cx, double y, int sc,
             for (int ry = 0; ry < 7; ry++) for (int rx = 0; rx < 5; rx++) if (TF[g].r[ry] >> (4 - rx) & 1) { SDL_FRect q = { (float)(x + rx * sc), (float)(y + ry * sc), (float)sc, (float)sc }; SDL_RenderFillRect(r, &q); }
     }
 }
+static float imp_shown;                                     /* the loader bar's own position, permille: it eases toward the real progress and creeps a little ahead of it, so it never looks stuck */
+static Uint64 imp_t0;
 static struct { SDL_Thread *th; volatile int busy, done, ok; char apk[1100], out[700], err[240]; int rm; } IJ;
 static int import_thread(void *p) { (void)p; IJ.ok = import_apk(IJ.apk, IJ.out, IJ.err, sizeof IJ.err); IJ.done = 1; return 0; }
 /* returns 0 (with imp_msg set) if it could not start. rm: delete the apk afterwards (Android hands us a temporary copy) */
@@ -281,7 +286,7 @@ static int import_start(const char *apk, const char *outpath, int rm) {
     if (IJ.busy) return 0;
     if (outpath) snprintf(IJ.out, sizeof IJ.out, "%s", outpath);
     else { if (!data_dir()[0]) { snprintf(imp_msg, sizeof imp_msg, "no writable data folder"); return 0; } data_path(IJ.out, sizeof IJ.out, "pnj.pack"); }
-    snprintf(IJ.apk, sizeof IJ.apk, "%s", apk); IJ.rm = rm; IJ.done = 0; IJ.ok = 0; IJ.err[0] = 0; imp_prog(0, IS_OPEN);
+    snprintf(IJ.apk, sizeof IJ.apk, "%s", apk); IJ.rm = rm; IJ.done = 0; IJ.ok = 0; IJ.err[0] = 0; imp_prog(0, IS_OPEN); imp_shown = 0; imp_t0 = SDL_GetTicks();
 #if defined(__vita__) || defined(PNJ_N3DS)
     { SDL_PropertiesID tp = SDL_CreateProperties();                   /* the console default thread stacks are small */
       SDL_SetPointerProperty(tp, SDL_PROP_THREAD_CREATE_ENTRY_FUNCTION_POINTER, (void *)import_thread);
@@ -310,14 +315,23 @@ static const char *imp_stage_name(int s) {
 }
 static void draw_import(SDL_Renderer *r) {                  /* 320x480 field coordinates */
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255); SDL_RenderClear(r);
-    int pm = imp_pm < 0 ? 0 : imp_pm > 1000 ? 1000 : imp_pm; char b[16];
-    tf_text(r, "IMPORTING", 160, 150, 4, 255, 224, 122);
-    tf_text(r, "GAME DATA", 160, 190, 4, 255, 224, 122);
-    SDL_SetRenderDrawColor(r, 200, 200, 210, 255); SDL_FRect o = { 40, 262, 240, 22 }; SDL_RenderRect(r, &o);
-    SDL_SetRenderDrawColor(r, 255, 224, 122, 255); SDL_FRect f = { 43, 265, (float)((234 * pm) / 1000), 16 }; SDL_RenderFillRect(r, &f);
-    snprintf(b, sizeof b, "%d%%", pm / 10);
-    tf_text(r, b, 160, 300, 3, 255, 255, 255);
-    tf_text(r, imp_stage_name(imp_stage), 160, 340, 2, 170, 170, 190);
+    int pm = imp_pm < 0 ? 0 : imp_pm > 1000 ? 1000 : imp_pm; char b[24];
+    imp_shown += ((float)pm - imp_shown) * 0.10f;
+    if (imp_shown < (float)pm + 12.0f && pm < 1000) imp_shown += 0.25f;
+    if (imp_shown > 1000.0f) imp_shown = 1000.0f;
+    if (pm >= 1000) imp_shown = 1000.0f;
+    int sh = (int)imp_shown;
+    tf_text(r, "IMPORTING", 160, 110, 4, 255, 224, 122);
+    tf_text(r, "GAME DATA", 160, 150, 4, 255, 224, 122);
+    SDL_SetRenderDrawColor(r, 200, 200, 210, 255); SDL_FRect o = { 40, 232, 240, 22 }; SDL_RenderRect(r, &o);
+    SDL_SetRenderDrawColor(r, 255, 224, 122, 255); SDL_FRect f = { 43, 235, (float)((234 * sh) / 1000), 16 }; SDL_RenderFillRect(r, &f);
+    snprintf(b, sizeof b, "%d%%", sh / 10);
+    tf_text(r, b, 160, 268, 3, 255, 255, 255);
+    tf_text(r, imp_stage_name(imp_stage), 160, 304, 2, 170, 170, 190);
+    { unsigned sec = (unsigned)((SDL_GetTicks() - imp_t0) / 1000); snprintf(b, sizeof b, "%u:%02u", sec / 60, sec % 60); tf_text(r, b, 160, 336, 2, 120, 120, 140); }
+    tf_text(r, "THIS CAN TAKE A FEW MINUTES.", 160, 384, 1, 255, 255, 255);
+    tf_text(r, "IT ONLY HAPPENS ONCE. PLEASE KEEP", 160, 398, 1, 200, 200, 200);
+    tf_text(r, "THE POWER ON AND THE CARD IN.", 160, 412, 1, 200, 200, 200);
 }
 #ifndef __ANDROID__
 static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet */
@@ -887,8 +901,10 @@ int main(int argc, char *argv[]) {
                 else if (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY) { stick_dir(SDL_GAMEPAD_BUTTON_DPAD_UP, e.gaxis.value < -12000); stick_dir(SDL_GAMEPAD_BUTTON_DPAD_DOWN, e.gaxis.value > 12000); }
                 break;
             case SDL_EVENT_FINGER_DOWN: case SDL_EVENT_FINGER_MOTION: case SDL_EVENT_FINGER_UP: {
+#ifndef PNJ_N3DS       /* the 3DS has no SDL video device, and SDL's touch lookup dereferences it: the touch screen is the one and only device there */
                 SDL_TouchDeviceType tt = SDL_GetTouchDeviceType(e.tfinger.touchID);
                 if (tt == SDL_TOUCH_DEVICE_INDIRECT_ABSOLUTE || tt == SDL_TOUCH_DEVICE_INDIRECT_RELATIVE) break;   /* trackpad, not the screen */
+#endif
                 if (e.type == SDL_EVENT_FINGER_DOWN) in_dev = IND_TOUCH;
                 float lx, ly; finger_field(win, r, e.tfinger.x, e.tfinger.y, &lx, &ly);
                 SDL_HideCursor();
