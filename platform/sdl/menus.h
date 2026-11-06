@@ -122,6 +122,14 @@ static void save_load(void) {
     save_apply();
 }
 
+/* 3DS: N3C is true while a menu is drawn 1:1 on the touch screen (a window of 240 field rows starting at pnj_menu_win) instead of at half size */
+#ifdef PNJ_N3DS
+#define N3C (pnj_menu_win >= 0)
+#define HISC 1.3            /* the HIGH label is hard to read after the 3DS shrinks the sheet */
+#else
+#define N3C 0
+#define HISC 1.0
+#endif
 /* ---------- drawing helpers ---------- */
 static void sprdst(SDL_Renderer *r, int id, double dx, double dy, double dw, double dh, int rgb) {
     const pnj_sprite *s = spr_at(id);
@@ -196,7 +204,12 @@ static void btn(SDL_Renderer *r, const char *label, int x, int y, int w, int h, 
     pill(r, x, py, w, disabled ? 0x444444 : fill);
     ftext(r, label, x + w / 2.0, py + 18.5 + size * 0.42, size, disabled ? 0x777777 : 0xffffff, 0, 1);   /* glyph centre = baseline - 0.42 size */
 }
-static void backbtn(SDL_Renderer *r) { SPR(r, 69, 40, 448); hit_add(0, 410, 96, 70, H_BACK); }
+static void backbtn(SDL_Renderer *r) {
+#ifdef PNJ_N3DS
+    if (N3C) { SPR(r, 69, 40, pnj_menu_win + 212); hit_add(0, pnj_menu_win + 182, 96, 58, H_BACK); return; }
+#endif
+    SPR(r, 69, 40, 448); hit_add(0, 410, 96, 70, H_BACK);
+}
 static void slider(SDL_Renderer *r, int x, int y, int w, double val, int on, int id) {
     hit_add(x - 8, y - 14, w + 16, 28, id);
     fill_rect(r, x, y - 3, w, 6, on ? 0x333333 : 0x222222, 255);
@@ -353,7 +366,7 @@ static void draw_menu(SDL_Renderer *r) {
         hit_add(0, 0, PNJ_W, PNJ_H, H_TITLE);
         break; }
     case UI_MENU: {
-        draw_logo(r, 0, 1);
+        if (!N3C) draw_logo(r, 0, 1);                           /* 3DS full-size menu: the logo is on the top screen */
 #ifdef PNJ_HAS_QUIT
         static const char *const items[6] = { "PLAY GAME", "RECORD", "OPTION", "HELP", "ACHIEVEMENTS", "QUIT TO DESKTOP" };
         static const int ids[6] = { H_PLAY, H_RECORD, H_OPTION, H_HELP, H_ACH, H_QUIT };
@@ -373,7 +386,7 @@ static void draw_menu(SDL_Renderer *r) {
         snprintf(b, sizeof b, "STAGE%d", sel_stage + 1); ftext(r, b, 160, 62, 24, 0x9966ff, 0, 1);
         ftext(r, STAGE_NAMES[sel_stage], 160, 100, sel_stage == 6 ? 17 : 22, 0xffffff, 0, 1);
         spr(r, 83 + sel_stage, 0, 0, 0, 160, 210, 0, 1, ready ? 1 : 0.3, 0, 1, 1, 1);
-        SPR(r, 61, 59, 321); digits_right(r, SV.top[sel_stage][0], 240, 305); SPR(r, 59, 268, 330);
+        spr(r, 61, 0, 0, 0, 59, 321, 0, HISC, 1, 0, 1, 1, 1); digits_right(r, SV.top[sel_stage][0], 240, 305); SPR(r, 59, 268, 330);
         SPR(r, 66, 34, 210); hit_add(0, 170, 66, 80, H_PREV);
         SPR(r, 67, 286, 210); hit_add(254, 170, 66, 80, H_NEXT);
         spr(r, 68, 0, 0, 0, 160, 410, 0, 1, ready ? 1 : 0.35, 0, 1, 1, 1); hit_add(92, 372, 136, 76, H_START);
@@ -395,6 +408,13 @@ static void draw_menu(SDL_Renderer *r) {
         break; }
     case UI_OPTION: {                                           /* the hub: pick a group */
         shade(r, scene ? 200 : 155);
+        if (N3C) {
+            ftext(r, "OPTION", 160, 34, 22, 0xffe07a, 0, 1);
+            btn(r, "SOUND", 60, 58, 200, 52, H_O_SND, menu_fill(H_O_SND, 0xb4b4d2), 18, 0);
+            btn(r, "CONTROLS", 60, 122, 200, 52, H_O_CTL, menu_fill(H_O_CTL, 0xb4b4d2), 18, 0);
+            backbtn(r);
+            break;
+        }
         ftext(r, "OPTION", 160, 48, 22, 0xffe07a, 0, 1);
 #ifdef PNJ_HAS_VIDEO
         const int rows = 3;
@@ -500,7 +520,7 @@ static void draw_menu(SDL_Renderer *r) {
         char b[16]; snprintf(b, sizeof b, "%d", over_score);
         draw_digits(r, over_score, 160 - 10.0 * strlen(b), 215);
         if (over_new) ftext(r, "NEW BEST!", 160, 290, 22, 0xffe07a, 0, 1);
-        else { SPR(r, 61, 100, 300); digits_right(r, SV.top[sel_stage][0], 240, 288); }
+        else { spr(r, 61, 0, 0, 0, 100, 300, 0, HISC, 1, 0, 1, 1, 1); digits_right(r, SV.top[sel_stage][0], 240, 288); }
         if (over_nach) {
             ftext(r, "ACHIEVEMENT UNLOCKED!", 160, 332, 13, 0xffe07a, 0, 1);
             for (int i = 0; i < over_nach && i < 3; i++) { char nb[40]; ach_name(over_ach[i], nb, sizeof nb); ftext(r, nb, 160, 354 + i * 18, 11, 0xffffff, 0, 1); }
@@ -516,18 +536,18 @@ static void draw_menu(SDL_Renderer *r) {
 /* pause overlay, drawn over the game by render() */
 static void draw_pause(SDL_Renderer *r) {
     shade(r, 160);
-    ftext(r, "PAUSE", 160, 130, 30, 0xffffff, 0, 1);
+    ftext(r, "PAUSE", 160, N3C ? 136 : 130, 30, 0xffffff, 0, 1);
 #ifdef PNJ_HAS_QUIT
     enum { Y0 = 180, DY = 40 };
 #else
     enum { Y0 = 195, DY = 45 };
 #endif
-    int y = Y0;
-    btn(r, "HELP", 60, y - 19, 200, 38, H_P_HELP, menu_fill(H_P_HELP, 0xb4b4d2), 16, 0); y += DY;
-    btn(r, "OPTION", 60, y - 19, 200, 38, H_P_OPTION, menu_fill(H_P_OPTION, 0xb4b4d2), 16, 0); y += DY;
-    btn(r, "EXIT", 60, y - 19, 200, 38, H_P_EXIT, menu_fill(H_P_EXIT, 0xb4b4d2), 16, 0); y += DY;
+    int y = N3C ? 182 : Y0; const int dy = N3C ? 42 : DY;
+    btn(r, "HELP", 60, y - 19, 200, 38, H_P_HELP, menu_fill(H_P_HELP, 0xb4b4d2), 16, 0); y += dy;
+    btn(r, "OPTION", 60, y - 19, 200, 38, H_P_OPTION, menu_fill(H_P_OPTION, 0xb4b4d2), 16, 0); y += dy;
+    btn(r, "EXIT", 60, y - 19, 200, 38, H_P_EXIT, menu_fill(H_P_EXIT, 0xb4b4d2), 16, 0); y += dy;
 #ifdef PNJ_HAS_QUIT
-    btn(r, "QUIT TO DESKTOP", 60, y - 19, 200, 38, H_P_QUIT, menu_fill(H_P_QUIT, 0xb4b4d2), 14, 0); y += DY;
+    btn(r, "QUIT TO DESKTOP", 60, y - 19, 200, 38, H_P_QUIT, menu_fill(H_P_QUIT, 0xb4b4d2), 14, 0); y += dy;
 #endif
     btn(r, "RESUME", 60, y - 19, 200, 38, H_P_RESUME, menu_fill(H_P_RESUME, 0xffe07a), 16, 0);
 }

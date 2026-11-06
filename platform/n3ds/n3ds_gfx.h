@@ -16,6 +16,7 @@
 #include <citro3d.h>
 #include <citro2d.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -32,6 +33,7 @@
 #endif
 typedef struct { C3D_RenderTarget *scr[2], *scr_r, *tgt; u32 clr; int blend; int draw_add; float ox, oy, sc; int cur; int eye; float dz, iod; } pnj_gfx;
 static int pnj_dbg_tex = -1, pnj_dbg_sub;    /* texture viewer: hold L and press R to step through the sheets, hold L and press X to move the close-up */
+static int pnj_menu_win = -1;                 /* menu mode: first field row shown 1:1 on the touch screen, or -1 for the whole menu at half size (set by main.c each frame) */
 static int pnj_top_pass;                      /* 1 while the top screen is drawn in menu mode: the game scene without the pause overlay */
 typedef struct { C3D_Tex tex; int w, h; int add; int alpha; int cr, cg, cb; } pnj_tex;
 typedef struct pnj_win { int unused; } pnj_win;
@@ -59,6 +61,11 @@ static pnj_gfx *pnj_gfx_open(void) {
     return g;
 }
 static void pnj_gfx_close(pnj_gfx *g) { (void)g; C2D_Fini(); C3D_Fini(); gfxExit(); }
+/* If anything in the shutdown path hangs (audio, a thread), this plain libctru thread ends the process a few seconds later so the Home menu / Homebrew Launcher
+ * is never left waiting on us. */
+static void pnj_exit_watchdog_fn(void *arg) { (void)arg; svcSleepThread(3000000000LL); svcExitProcess(); }
+static void pnj_exit_watchdog(void) { threadCreate(pnj_exit_watchdog_fn, NULL, 4096, 0x18, -2, true); }
+static void pnj_exit_log(const char *what) { FILE *f = fopen("sdmc:/3ds/pacnjump/log.txt", "ab"); if (f) { fprintf(f, "exit: %s\n", what); fclose(f); } }
 static void pnj_gfx_blend(pnj_gfx *g, int add) {
     if (g->blend == add) return;
     C2D_Flush(); g->blend = add;
@@ -82,6 +89,7 @@ static void pnj_gfx_screen(pnj_gfx *g, int s, int menu) {
     g->tgt = (s == 0 && g->eye > 0) ? g->scr_r : g->scr[s];
     if (!menu) { g->ox = s == 0 ? 40.0f : 0.0f; g->oy = s == 0 ? 0.0f : -240.0f; }
     else if (s == 0) { g->ox = 40.0f; g->oy = 0.0f; }
+    else if (pnj_menu_win >= 0) { g->sc = 1.0f; g->ox = 0.0f; g->oy = -(float)pnj_menu_win; }
     else { g->sc = 0.5f; g->ox = 80.0f; g->oy = 0.0f; }
     C2D_TargetClear(g->tgt, C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(g->tgt);

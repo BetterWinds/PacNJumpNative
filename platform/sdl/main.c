@@ -526,6 +526,13 @@ static void draw_current(SDL_Renderer *rr) {
     if (ui_mode == UI_PLAY) render(rr); else draw_menu(rr);
 }
 /* Menu mode: a menu, the pause overlay or game over is up. The menu goes on the touch screen only, at half size; the top screen keeps the scene. */
+/* Which field rows the touch screen shows 1:1 for the current menu (-1: the whole menu at half size). Screens whose buttons fit in 240 rows get full size. */
+static int n3ds_menu_win(void) {
+    if (ui_mode == UI_MENU) return 150;
+    if (ui_mode == UI_PLAY && paused) return 106;
+    if (ui_mode == UI_OPTION) return 0;
+    return -1;
+}
 static int n3ds_menu_mode(void) { return !IJ.busy && !need_data && (ui_mode != UI_PLAY || paused); }
 static void draw_top_menu(SDL_Renderer *rr) {
     int scene = ui_mode == UI_PLAY || ui_mode == UI_OVER || (is_opt(ui_mode) && opt_back == UI_PLAY) || (ui_mode == UI_HELP && help_back == UI_PLAY);
@@ -554,6 +561,7 @@ static void present_frame(SDL_Renderer *rr) {
     pnj_gfx_begin(rr);
     if (pnj_dbg_tex >= 0) { draw_texview(rr); pnj_gfx_end(rr); return; }
     int menu = n3ds_menu_mode();
+    pnj_menu_win = menu ? n3ds_menu_win() : -1;
     for (int pass = 0; pass < 3; pass++) {                                    /* top left eye, top right eye (3D slider up only), touch screen */
         int s = pass == 2, eye = pass == 0 ? (stereo ? -1 : 0) : pass == 1 ? 1 : 0;
         if (pass == 1 && !stereo) continue;
@@ -567,7 +575,8 @@ static void present_frame(SDL_Renderer *rr) {
 static void mouse_field(SDL_Window *w, SDL_Renderer *rr, float x, float y, float *lx, float *ly) { (void)w; (void)rr; *lx = x; *ly = y; }
 static void finger_field(SDL_Window *w, SDL_Renderer *rr, float nx, float ny, float *lx, float *ly) {      /* nx, ny: 0..1 over the touch screen */
     (void)w; (void)rr; float px = nx * 320.0f, py = ny * 240.0f;
-    if (n3ds_menu_mode()) { *lx = (px - 80.0f) * 2.0f; *ly = py * 2.0f; }           /* the menu sits at half size, centred on the touch screen */
+    if (n3ds_menu_mode() && pnj_menu_win >= 0) { *lx = px; *ly = py + (float)pnj_menu_win; }
+    else if (n3ds_menu_mode()) { *lx = (px - 80.0f) * 2.0f; *ly = py * 2.0f; }           /* the menu sits at half size, centred on the touch screen */
     else { *lx = px; *ly = 240.0f + py; }                                           /* playing: the touch screen is the lower half of the field */
 }
 #endif
@@ -990,8 +999,21 @@ int main(int argc, char *argv[]) {
         orient_apply(win, r);
         present_frame(r);
     }
+#ifdef PNJ_N3DS
+    pnj_exit_log("loop ended"); pnj_exit_watchdog();
+#endif
     if (IJ.busy) { SDL_WaitThread(IJ.th, NULL); IJ.th = NULL; IJ.busy = 0; if (IJ.rm) remove(IJ.apk); }   /* closed mid-import: let the pack finish writing */
-    SDL_DestroyRenderer(r); SDL_DestroyWindow(win); SDL_Quit();
+#ifdef PNJ_N3DS
+    pnj_exit_log("import done, closing graphics");
+#endif
+    SDL_DestroyRenderer(r); SDL_DestroyWindow(win);
+#ifdef PNJ_N3DS
+    pnj_exit_log("graphics closed, SDL_Quit");
+#endif
+    SDL_Quit();
+#ifdef PNJ_N3DS
+    pnj_exit_log("clean");
+#endif
     return 0;
 }
 
