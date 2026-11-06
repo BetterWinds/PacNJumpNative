@@ -959,6 +959,9 @@ int main(int argc, char *argv[]) {
                 break; }
             }
         }
+#ifdef PNJ_N3DS
+        if (!run) break;                                    /* the system asked us to close: do not draw another frame, the GPU service may already be gone and the draw would never return */
+#endif
         fs_state = (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) != 0;
         if (fs_req) { fs_req = 0; SDL_SetWindowFullscreen(win, !fs_state); }
         if (SV.hdr != applied_hdr) {                        /* HDR switched in Options: the output colorspace is fixed per renderer, so make a new one */
