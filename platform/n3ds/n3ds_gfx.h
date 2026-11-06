@@ -25,6 +25,7 @@
 #endif
 
 typedef struct { C3D_RenderTarget *scr[2]; u32 clr; int blend; int draw_add; float ox, oy, sc; int cur; } pnj_gfx;
+static int pnj_dbg_tex = -1, pnj_dbg_sub;    /* texture viewer: hold L and press R to step through the sheets, hold L and press X to move the close-up */
 static int pnj_top_pass;                      /* 1 while the top screen is drawn in menu mode: the game scene without the pause overlay */
 typedef struct { C3D_Tex tex; int w, h; int add; int alpha; int cr, cg, cb; } pnj_tex;
 typedef struct pnj_win { int unused; } pnj_win;
@@ -195,6 +196,8 @@ static void pnj_n3ds_pump(void) {
         { KEY_A, SDL_GAMEPAD_BUTTON_SOUTH }, { KEY_B, SDL_GAMEPAD_BUTTON_EAST }, { KEY_X, SDL_GAMEPAD_BUTTON_NORTH }, { KEY_Y, SDL_GAMEPAD_BUTTON_WEST },
         { KEY_START, SDL_GAMEPAD_BUTTON_START }, { KEY_SELECT, SDL_GAMEPAD_BUTTON_BACK }, { KEY_L, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER }, { KEY_R, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER } };
     u32 kd = hidKeysDown(), ku = hidKeysUp(), kh = hidKeysHeld();
+    if ((kh & KEY_L) && (kd & KEY_R)) { if (++pnj_dbg_tex >= 21) pnj_dbg_tex = -1; SDL_Log("texview %d", pnj_dbg_tex); }
+    if ((kh & KEY_L) && (kd & KEY_X)) pnj_dbg_sub++;
     for (unsigned i = 0; i < sizeof map / sizeof map[0]; i++) { if (kd & map[i].k) pnj_push_button(map[i].b, 1); if (ku & map[i].k) pnj_push_button(map[i].b, 0); }
     { circlePosition cp; hidCircleRead(&cp);
       static int lx, ly; int nx = abs(cp.dx) > 30 ? cp.dx * 32767 / 156 : 0, ny = abs(cp.dy) > 30 ? -cp.dy * 32767 / 156 : 0;   /* the circle pad's y is up-positive */

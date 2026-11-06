@@ -482,8 +482,21 @@ static void draw_top_menu(SDL_Renderer *rr) {
     draw_bg(rr);
     if (ui_mode == UI_TITLE || ui_mode == UI_MENU) draw_logo(rr, 0, 1);
 }
+/* texture viewer (L+R): top screen shows the whole sheet as the GPU holds it, touch screen a 1:1 close-up of one quarter (L+X changes it) */
+static void draw_texview(SDL_Renderer *rr) {
+    SDL_Texture *t = get_tex(rr, pnj_dbg_tex);
+    for (int s = 0; s < 2; s++) {
+        pnj_gfx_screen(rr, s, 0); rr->ox = 0; rr->oy = 0; rr->sc = 1.0f;
+        SDL_SetRenderDrawColor(rr, 60, 0, 60, 255); SDL_FRect q = { 0, 0, 400, 240 }; SDL_RenderFillRect(rr, &q);
+        if (!t) continue;
+        SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND); SDL_SetTextureAlphaMod(t, 255); SDL_SetTextureColorMod(t, 255, 255, 255);
+        if (s == 0) { SDL_FRect src = { 0, 0, (float)t->w, (float)t->h }, dst = { 82, 2, 236, 236 }; SDL_RenderTexture(rr, t, &src, &dst); }
+        else { int qd = pnj_dbg_sub & 3; SDL_FRect src = { (float)((qd & 1) * (t->w - 320)), (float)((qd >> 1) * (t->h - 240)), 320, 240 }, dst = { 0, 0, 320, 240 }; SDL_RenderTexture(rr, t, &src, &dst); }
+    }
+}
 static void present_frame(SDL_Renderer *rr) {
     pnj_gfx_begin(rr);
+    if (pnj_dbg_tex >= 0) { draw_texview(rr); pnj_gfx_end(rr); return; }
     int menu = n3ds_menu_mode();
     for (int s = 0; s < 2; s++) {
         pnj_gfx_screen(rr, s, menu);
