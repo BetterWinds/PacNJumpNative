@@ -38,4 +38,7 @@ ls -la out
   echo "== diff of the two probes (byte offsets that differ, first 40)" >>"$L"
   cmp -l probe1.cdi probe3.cdi 2>&1 | wc -l >>"$L"
   cmp -l probe1.cdi probe3.cdi 2>&1 | head -40 | awk '{printf "%d ", $1-1}' >>"$L"
+  echo "== SRC LISTING" >>"$L"
+  (cd /tmp/mkdcdisc && git log --oneline -1; find . -path ./build -prune -o -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' -o -name '*.md' -o -name 'meson.build' \) -print | xargs wc -l | sort -k2) >>"$L" 2>&1
 ) || true
+
