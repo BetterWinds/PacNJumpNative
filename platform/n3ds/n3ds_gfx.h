@@ -101,8 +101,9 @@ static void pnj_line(pnj_gfx *g, float x0, float y0, float x1, float y1) {
 #ifndef PNJ_N3DS_TEX_FLIP
 #define PNJ_N3DS_TEX_FLIP 1          /* the image's top row ends up at v = 1; set to 0 if every sprite comes out upside down */
 #endif
-static pnj_tex *pnj_tex_make(const unsigned char *px, int w, int h, int half, int sharp) {
-    int dw = half ? w / 2 : w, dh = half ? h / 2 : h;
+static pnj_tex *pnj_tex_make(const unsigned char *px, int w, int h, int shrink, int sharp) {
+    if (shrink < 1) shrink = 1;
+    int dw = w / shrink, dh = h / shrink;
     if (dw < 8 || dh < 8 || (dw & (dw - 1)) || (dh & (dh - 1)) || dw > 1024 || dh > 1024) return NULL;     /* the GPU needs powers of two */
     pnj_tex *t = (pnj_tex *)calloc(1, sizeof *t); if (!t) return NULL;
     if (!C3D_TexInit(&t->tex, (u16)dw, (u16)dh, GPU_RGBA8)) { free(t); return NULL; }
@@ -111,12 +112,14 @@ static pnj_tex *pnj_tex_make(const unsigned char *px, int w, int h, int half, in
     if (!lin) { C3D_TexDelete(&t->tex); free(t); return NULL; }
     for (int y = 0; y < dh; y++) for (int x = 0; x < dw; x++) {
         unsigned r, g, b, a;
-        if (half) {
-            const unsigned char *p0 = px + ((size_t)(y * 2) * w + x * 2) * 4, *p1 = p0 + 4, *p2 = p0 + (size_t)w * 4, *p3 = p2 + 4;
-            const unsigned char *q[4] = { p0, p1, p2, p3 }; unsigned sa = 0, sr = 0, sg = 0, sb = 0;
-            for (int k = 0; k < 4; k++) { sa += q[k][3]; sr += q[k][0] * q[k][3]; sg += q[k][1] * q[k][3]; sb += q[k][2] * q[k][3]; }
+        if (shrink > 1) {                                         /* alpha-weighted box average of a shrink x shrink block */
+            unsigned sa = 0, sr = 0, sg = 0, sb = 0;
+            for (int j = 0; j < shrink; j++) for (int i = 0; i < shrink; i++) {
+                const unsigned char *q = px + ((size_t)(y * shrink + j) * w + (x * shrink + i)) * 4;
+                sa += q[3]; sr += q[0] * q[3]; sg += q[1] * q[3]; sb += q[2] * q[3];
+            }
             if (sa) { r = sr / sa; g = sg / sa; b = sb / sa; } else r = g = b = 0;
-            a = sa / 4;
+            a = sa / (unsigned)(shrink * shrink);
         } else { const unsigned char *p = px + ((size_t)y * w + x) * 4; r = p[0]; g = p[1]; b = p[2]; a = p[3]; }
         lin[(size_t)y * dw + x] = (r << 24) | (g << 16) | (b << 8) | a;
     }
@@ -149,10 +152,9 @@ static void pnj_draw_tex(pnj_gfx *g, pnj_tex *t, const SDL_FRect *src, const SDL
     sub.top = 1.0f - src->y / t->h; sub.bottom = 1.0f - (src->y + src->h) / t->h;     /* texture v runs bottom to top */
     C2D_Image img = { &t->tex, &sub };
     pnj_gfx_blend(g, t->add);
-    /* the colour tint is a multiply on desktop; citro2d only mixes towards a colour, so additive glow (the only place it matters) is dimmed instead */
-    float a = t->alpha / 255.0f;
-    if (t->add) { int m = t->cr > t->cg ? t->cr : t->cg; if (t->cb > m) m = t->cb; a *= m / 255.0f; if (a > 1.0f) a = 1.0f; }
-    C2D_ImageTint tint; C2D_AlphaImageTint(&tint, a);
+    /* colour mod and alpha mod: citro2d's multiply tint mode (texture x colour), full strength */
+    C2D_SetTintMode(C2D_TintMult);
+    C2D_ImageTint tint; C2D_PlainImageTint(&tint, C2D_Color32((u8)t->cr, (u8)t->cg, (u8)t->cb, (u8)(t->alpha < 0 ? 0 : t->alpha > 255 ? 255 : t->alpha)), 1.0f);
     C2D_DrawParams p;
     /* citro2d puts the centre point at pos, not the top-left corner, so pos is the middle of the destination (spin about that point) */
     p.pos.w = dst->w * g->sc; p.pos.h = dst->h * g->sc;

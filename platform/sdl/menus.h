@@ -138,6 +138,9 @@ static void pill(SDL_Renderer *r, double x, double y, double w, int rgb) {
 static void ftext(SDL_Renderer *r, const char *t, double x, double y, double size, int rgb, int align, double alpha) {
     SDL_Texture *tx = get_tex(r, 2); if (!tx) return;
     double k = (double)TEXW[2] / 512.0, cell = size * 1.15, adv = cell * 0.7, w = strlen(t) * adv;
+#ifdef PNJ_N3DS
+    if (FONTLITE && r->sc < 0.75f) { tx = FONTLITE; k = 0.5; }       /* half-size menus use the pre-shrunk font */
+#endif
     double px = align == 1 ? x : align == 2 ? x - w : x - w / 2, py = y - cell * 0.78;
     SDL_SetTextureBlendMode(tx, SDL_BLENDMODE_BLEND);
     SDL_SetTextureAlphaMod(tx, (Uint8)(alpha < 0 ? 0 : alpha > 1 ? 255 : alpha * 255));

@@ -37,6 +37,9 @@ static int touch_dir = 0;       /* digital touch: -1 left half, +1 right half */
 
 /* ---------- assets ---------- */
 static SDL_Texture *TEX[PNJ_NTEX];
+#ifdef PNJ_N3DS
+static SDL_Texture *FONTLITE;
+#endif
 /* HDR output (desktop). The renderer is made with a linear output colorspace when the HDR option is on. SDL then scales ordinary (SDR) drawing to
  * the display's SDR white level by itself, so the picture looks the same as before, and colors above 1.0 are free to go brighter than white.
  * hdr_gain is how much brighter glow and sparkle sprites are pushed (1.0 = not at all). */
@@ -89,7 +92,12 @@ static SDL_Texture *get_tex(SDL_Renderer *r, int i) {
     if (!px) { TEXW[i] = -1; SDL_Log("missing texture %s", name); return 0; }
 #ifdef PNJ_N3DS
     int half = w >= 512;                                    /* the sheets are drawn at half their size; see n3ds_gfx.h */
-    SDL_Texture *t = pnj_tex_make(px, w, h, half, 0); if (t) w = t->w;
+    SDL_Texture *t = pnj_tex_make(px, w, h, half ? 2 : 1, 0); if (t) w = t->w;
+    if (i == 2 && !FONTLITE && w == 512) {                  /* menus are drawn at half size: a pre-shrunk copy of the dotted font (16 px cells) stays readable */
+        size_t rowb = (size_t)1024 * 4; unsigned char *fl = (unsigned char *)calloc(512, rowb);
+        if (fl && h >= 384) { memcpy(fl, px, (size_t)384 * rowb); FONTLITE = pnj_tex_make(fl, 1024, 512, 4, 0); }
+        free(fl);
+    }
     (void)r;
 #else
     SDL_Texture *t = SDL_CreateTexture(r, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, w, h);
