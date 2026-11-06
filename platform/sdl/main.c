@@ -704,6 +704,11 @@ static int selftest(int steps, uint32_t seed, const char *bmp, int stage, int le
 }
 #endif
 
+#ifdef PNJ_N3DS
+static int no_audio;                                  /* set at start-up when the 3DS has no usable DSP route (see the sound block in main) */
+#else
+#define no_audio 0
+#endif
 int main(int argc, char *argv[]) {
     int selftest_steps = 0; uint32_t seed = 0; const char *bmp = NULL; int st_arg = 0, lv_arg = 0; const char *pack_arg = NULL, *import_arg = NULL, *import_out = NULL; int packinfo = 0, audiotest = 0, start_fs = 0, cli_orient = -1, windowed = 0, cli_hdr = -1;
     for (int i = 1; i < argc; i++) {
@@ -743,7 +748,17 @@ int main(int argc, char *argv[]) {
 #endif
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
 #ifdef PNJ_N3DS
-    { Result orc = opendspInit(); SDL_Log("opendsp: init %08lX%s", (unsigned long)orc, R_SUCCEEDED(orc) ? " (ok)" : " (falling back to dspfirm.cdc)"); }   /* SDL's audio backend then finds ndsp already running */
+    /* Sound. A dumped sdmc:/3ds/dspfirm.cdc is used when it is there (plain ndsp, SDL's audio backend initialises it). Without one, OpenDSP is only tried if
+       sdmc:/3ds/pacnjump/opendsp exists: on a New 3DS XL it faulted reading the DSP memory (opendspGetCapabilities), so it is opt-in until that is understood.
+       With neither, the game runs without sound. sdmc:/3ds/pacnjump/log.txt records which route was taken, written before the risky call. */
+    {
+        FILE *f = fopen("sdmc:/3ds/dspfirm.cdc", "rb"); int have_fw = f != NULL; if (f) fclose(f);
+        f = fopen("sdmc:/3ds/pacnjump/opendsp", "rb"); int try_od = f != NULL; if (f) fclose(f);
+        const char *route = have_fw ? "dspfirm.cdc" : try_od ? "opendsp" : "no sound (no dspfirm.cdc; make an empty file named opendsp in this folder to try OpenDSP)";
+        f = fopen("sdmc:/3ds/pacnjump/log.txt", "w"); if (f) { fprintf(f, "sound route: %s\n", route); fflush(f); fclose(f); }
+        if (!have_fw && !try_od) no_audio = 1;
+        else if (!have_fw) { Result orc = opendspInit(); SDL_Log("opendsp: init %08lX", (unsigned long)orc); if (R_FAILED(orc)) no_audio = 1; }
+    }
 #endif
     no_bundle = getenv("PNJ_NO_BUNDLE") != NULL;
     if (pack_find(pack_arg)) { pack_load_maps(); SDL_Log("game data pack: %s (%d files, %d maps)", pack_path, PKN, PK_NMAPS); }
@@ -766,7 +781,7 @@ int main(int argc, char *argv[]) {
         printf("audiotest jingle: now=%s pcm_frames=%u (stage music keeps playing if the jingle is not in the pack)\n", mus_name, (unsigned)mus_frames);
         SDL_Quit(); return 0;
     }
-    if (!selftest_steps) audio_init();
+    if (!selftest_steps && !no_audio) audio_init();
     if (selftest_steps) { int rc = selftest(selftest_steps, seed ? seed : 1, bmp, st_arg, lv_arg); SDL_Quit(); return rc; }
 
     if (getenv("SteamDeck") || getenv("SteamGamepadUI")) start_fs = 1;        /* Steam sets these when it launches a game on a Steam Deck */
