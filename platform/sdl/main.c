@@ -191,12 +191,17 @@ static int do_import(const char *apk, const char *outpath) {
     return 1;
 }
 static int ends_apk(const char *s) { size_t l = strlen(s); return l > 4 && !SDL_strcasecmp(s + l - 4, ".apk"); }
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__vita__)
 #include <dirent.h>
 static int import_start(const char *apk, const char *outpath, int rm);
-static void scan_for_apk(void) {                      /* Android: pick up any .apk copied into the app's own folder (each file is tried once) */
-    static char tried[700];
+static void scan_for_apk(void) {                      /* Android and Vita: pick up any .apk copied into the app's own folder (each file is tried once) */
+    static char tried[700], vdir[700];
+#ifdef __ANDROID__
     const char *dir = SDL_GetAndroidExternalStoragePath(); if (!dir) return;
+#else
+    snprintf(vdir, sizeof vdir, "%s", data_dir()); size_t vl = strlen(vdir); if (vl > 1 && vdir[vl - 1] == '/') vdir[vl - 1] = 0;
+    const char *dir = vdir; if (!dir[0]) return;
+#endif
     DIR *d = opendir(dir); if (!d) return;
     struct dirent *e; char p[700];
     while ((e = readdir(d))) if (ends_apk(e->d_name)) {
@@ -211,7 +216,9 @@ static void scan_for_apk(void) {                      /* Android: pick up any .a
 #define PNJ_VERSION "dev"
 #endif
 #ifndef __ANDROID__
+#ifndef __vita__
 static const char *DATA_HELP = "Pac'N-Jump needs the game data from your own copy of the original Android APK.\n\nDrag the APK onto this window, or run:  pnj --import game.apk";
+#endif
 #endif
 
 /* ---------- import on a worker thread, with a loader screen ---------- */
@@ -245,7 +252,15 @@ static int import_start(const char *apk, const char *outpath, int rm) {
     if (outpath) snprintf(IJ.out, sizeof IJ.out, "%s", outpath);
     else { if (!data_dir()[0]) { snprintf(imp_msg, sizeof imp_msg, "no writable data folder"); return 0; } data_path(IJ.out, sizeof IJ.out, "pnj.pack"); }
     snprintf(IJ.apk, sizeof IJ.apk, "%s", apk); IJ.rm = rm; IJ.done = 0; IJ.ok = 0; IJ.err[0] = 0; imp_prog(0, IS_OPEN);
+#ifdef __vita__
+    { SDL_PropertiesID tp = SDL_CreateProperties();                   /* the Vita's default thread stack is small */
+      SDL_SetPointerProperty(tp, SDL_PROP_THREAD_CREATE_ENTRY_FUNCTION_POINTER, (void *)import_thread);
+      SDL_SetStringProperty(tp, SDL_PROP_THREAD_CREATE_NAME_STRING, "import");
+      SDL_SetNumberProperty(tp, SDL_PROP_THREAD_CREATE_STACKSIZE_NUMBER, 1024 * 1024);
+      IJ.th = SDL_CreateThreadWithProperties(tp); SDL_DestroyProperties(tp); }
+#else
     IJ.th = SDL_CreateThread(import_thread, "import", NULL);
+#endif
     if (!IJ.th) { snprintf(imp_msg, sizeof imp_msg, "could not start the import thread"); return 0; }
     IJ.busy = 1; return 1;
 }
@@ -277,6 +292,17 @@ static void draw_import(SDL_Renderer *r) {                  /* 320x480 field coo
 #ifndef __ANDROID__
 static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet */
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255); SDL_RenderClear(r);
+#ifdef __vita__
+    { char path[160]; snprintf(path, sizeof path, "%s", data_dir());
+      for (char *c = path; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32;
+      tf_text(r, "COPY YOUR PAC'N-JUMP", 160, 150, 2, 255, 224, 122);
+      tf_text(r, "APK INTO THIS FOLDER", 160, 176, 2, 255, 224, 122);
+      tf_text(r, "ON THE VITA", 160, 202, 2, 255, 224, 122);
+      tf_text(r, path, 160, 262, 1, 255, 255, 255);
+      tf_text(r, "THE ORIGINAL ANDROID FILE", 160, 320, 1, 170, 170, 190);
+      tf_text(r, "THE GAME FINDS IT BY ITSELF", 160, 340, 1, 170, 170, 190); }
+    return;
+#endif
     tf_text(r, "DROP YOUR", 160, 170, 3, 255, 224, 122);
     tf_text(r, "PAC'N-JUMP APK", 160, 204, 3, 255, 224, 122);
     tf_text(r, "ON THIS WINDOW", 160, 238, 3, 255, 224, 122);
@@ -352,11 +378,15 @@ static void orient_apply(SDL_Window *w, SDL_Renderer *rr) {
         applied_int = wi;
     }
     if (applied_orient == SV.orient) return;
+#ifndef __vita__
     SDL_SetWindowMinimumSize(w, SV.orient ? 360 : 240, SV.orient ? 240 : 360);
     if (!(SDL_GetWindowFlags(w) & SDL_WINDOW_FULLSCREEN)) {
         int ww, wh; SDL_GetWindowSize(w, &ww, &wh);
         if ((SV.orient != 0) != (ww > wh)) SDL_SetWindowSize(w, wh, ww);
     }
+#else
+    (void)w;
+#endif
     applied_orient = SV.orient;
 }
 static void draw_current(SDL_Renderer *rr) {
@@ -574,6 +604,9 @@ int main(int argc, char *argv[]) {
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+#ifdef __vita__
+    SDL_SetHint(SDL_HINT_VITA_ENABLE_BACK_TOUCH, "0");     /* the rear pad would send stray taps */
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     no_bundle = getenv("PNJ_NO_BUNDLE") != NULL;
     if (pack_find(pack_arg)) { pack_load_maps(); SDL_Log("game data pack: %s (%d files, %d maps)", pack_path, PKN, PK_NMAPS); }
@@ -601,6 +634,10 @@ int main(int argc, char *argv[]) {
 
     if (getenv("SteamDeck") || getenv("SteamGamepadUI")) start_fs = 1;        /* Steam sets these when it launches a game on a Steam Deck */
     if (windowed) start_fs = 0;
+#ifdef __vita__
+    SDL_Window *win = SDL_CreateWindow("Pac'N-Jump", 960, 544, SDL_WINDOW_FULLSCREEN);
+    if (!win) { fprintf(stderr, "window: %s\n", SDL_GetError()); return 1; }
+#else
     int win_h = 720, win_w = 480;                           /* portrait 2:3, as tall as is comfortable on this display */
     { SDL_Rect ub; if (SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &ub) && ub.w > 0 && ub.h > 0) {
         win_h = ub.h * 88 / 100; if (win_h > 960) win_h = 960; win_w = win_h * 2 / 3;
@@ -610,6 +647,7 @@ int main(int argc, char *argv[]) {
     if (!win) { fprintf(stderr, "window: %s\n", SDL_GetError()); return 1; }
     if (!start_fs) SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_SetWindowMinimumSize(win, 240, 360);
+#endif
     save_load(); if (cli_orient >= 0) SV.orient = cli_orient; if (cli_hdr >= 0) SV.hdr = cli_hdr;
     int applied_hdr = SV.hdr;
     SDL_Renderer *r = make_renderer(win, applied_hdr);
@@ -620,7 +658,7 @@ int main(int argc, char *argv[]) {
 
     srand((unsigned)SDL_GetTicks()); ui_enter(UI_TITLE); orient_apply(win, r);
     need_data = !data_present();
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(__vita__)
     if (need_data) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Game data needed", DATA_HELP, win);
 #endif
     if (seed) start_stage(0);
@@ -728,7 +766,7 @@ int main(int argc, char *argv[]) {
             last = SDL_GetPerformanceCounter(); acc = 0; continue;
         }
         if (need_data) {                                 /* nothing to play yet: wait for an APK */
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__vita__)
             static int tick; if (++tick % 60 == 0) scan_for_apk();
 #endif
             orient_apply(win, r); present_frame(r); SDL_Delay(16);
@@ -758,3 +796,9 @@ int main(int argc, char *argv[]) {
     SDL_DestroyRenderer(r); SDL_DestroyWindow(win); SDL_Quit();
     return 0;
 }
+
+#ifdef __vita__
+/* VitaSDK reads these two at start-up: the C heap (the APK import and the sprite sheets need room) and the default thread stack */
+unsigned int _newlib_heap_size_user = 200 * 1024 * 1024;
+unsigned int _pthread_stack_default_user = 1024 * 1024;
+#endif
