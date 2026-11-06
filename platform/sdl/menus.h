@@ -320,7 +320,7 @@ static void draw_hits(SDL_Renderer *r) {   /* dev aid: PNJ_HITS=1 outlines every
 static void draw_menu(SDL_Renderer *r) {
     nhits = 0;
     int scene = ui_mode == UI_OVER || (is_opt(ui_mode) && opt_back == UI_PLAY) || (ui_mode == UI_HELP && help_back == UI_PLAY);
-    if (scene) render(r), nhits = 0;
+    if (scene) { int kid = kb_id; render(r); nhits = 0; kb_id = kid; }   /* render() refreshes the focus against an empty hit list; keep the one from last frame */
     else {
         G.stage = sel_stage; G.L = ui_L; G.cam594 = (fx)(-ui_L * 4); G.peak = 0; G.p.power = 0;
         SDL_SetRenderDrawColor(r, 0, 0, 0, 255); SDL_RenderClear(r);
