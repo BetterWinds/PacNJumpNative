@@ -144,8 +144,8 @@ static void imp_add(imp_file **fl, int *n, int *cap, const char *name, unsigned 
     imp_file *f = &(*fl)[(*n)++]; snprintf(f->name, sizeof f->name, "%s", name); f->d = d; f->n = sz;
 }
 static int imp_cmp(const void *a, const void *b) { return strcmp(((const imp_file *)a)->name, ((const imp_file *)b)->name); }
-static void wr32(FILE *f, Uint32 v) { fputc(v & 255, f); fputc((v >> 8) & 255, f); fputc((v >> 16) & 255, f); fputc((int)(v >> 24), f); }
-static void wr16(FILE *f, Uint32 v) { fputc(v & 255, f); fputc((v >> 8) & 255, f); }
+#define PK32(q, v) do { Uint32 v_ = (Uint32)(v); *(q)++ = v_ & 255; *(q)++ = (v_ >> 8) & 255; *(q)++ = (v_ >> 16) & 255; *(q)++ = (unsigned char)(v_ >> 24); } while (0)
+#define PK16(q, v) do { Uint32 v_ = (Uint32)(v); *(q)++ = v_ & 255; *(q)++ = (v_ >> 8) & 255; } while (0)
 
 /* The power-up jingle (res/raw/wakawaka.3gp) is AAC-LC. aac_dec.c decodes it itself, so every desktop platform gets the same result with nothing else installed.
  * If that ever fails on some other file, the OS decoder is tried (Windows Media Foundation, macOS AudioToolbox, jingle_native.c), then ffmpeg if it is installed.
@@ -241,18 +241,46 @@ static int import_apk(const char *apk, const char *out_pack, char *err, size_t e
     {
         imp_prog(800, IS_WRITE); imp_mark("writing pack");
         char tmp[620]; snprintf(tmp, sizeof tmp, "%s.tmp", out_pack);
-        FILE *f = fopen(tmp, "wb"); if (!f) { snprintf(err, errn, "cannot write %s", tmp); goto done; }
-        fwrite("PNJPACK1", 1, 8, f); wr32(f, (Uint32)nf);
-        Uint32 off = 12; for (int i = 0; i < nf; i++) off += 2 + (Uint32)strlen(fl[i].name) + 8;
-        for (int i = 0; i < nf; i++) { Uint32 l = (Uint32)strlen(fl[i].name); wr16(f, l); fwrite(fl[i].name, 1, l, f); wr32(f, off); wr32(f, (Uint32)fl[i].n); off += (Uint32)fl[i].n; }
-        size_t total = 1, done_b = 0; for (int i = 0; i < nf; i++) total += fl[i].n;
-        for (int i = 0; i < nf; i++) {                          /* 64 KB at a time, with the bar moving after each piece */
-            for (size_t o = 0; o < fl[i].n; ) {
-                size_t c = fl[i].n - o; if (c > (64u << 10)) c = 64u << 10;
-                fwrite(fl[i].d + o, 1, c, f); o += c; done_b += c; imp_prog(800 + (int)(190 * done_b / total), IS_WRITE);
+        size_t hdr_n = 12; for (int i = 0; i < nf; i++) hdr_n += 2 + strlen(fl[i].name) + 8;
+        unsigned char *hdr = (unsigned char *)malloc(hdr_n); if (!hdr) { snprintf(err, errn, "out of memory"); goto done; }
+        { unsigned char *q = hdr; memcpy(q, "PNJPACK1", 8); q += 8; PK32(q, (Uint32)nf);
+          Uint32 off = (Uint32)hdr_n;
+          for (int i = 0; i < nf; i++) { Uint32 l = (Uint32)strlen(fl[i].name); PK16(q, l); memcpy(q, fl[i].name, l); q += l; PK32(q, off); PK32(q, (Uint32)fl[i].n); off += (Uint32)fl[i].n; } }
+        size_t total = hdr_n, done_b = 0; for (int i = 0; i < nf; i++) total += fl[i].n;
+        int bad = 0, wrote = 0;
+#ifdef PNJ_N3DS
+        /* libctru's stdio layer flushes the SD card after every write call, and each flush took about a second: five minutes for the pack. Talk to the
+           file system directly, write big pieces with no flush, and flush once at the end. */
+        {
+            Handle h; const char *pp = !strncmp(tmp, "sdmc:", 5) ? tmp + 5 : tmp;
+            if (R_SUCCEEDED(FSUSER_OpenFileDirectly(&h, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""), fsMakePath(PATH_ASCII, pp), FS_OPEN_WRITE | FS_OPEN_CREATE, 0))) {
+                u64 pos = 0; u32 got = 0; wrote = 1;
+                FSFILE_SetSize(h, (u64)total);
+                if (R_FAILED(FSFILE_Write(h, &got, pos, hdr, (u32)hdr_n, 0)) || got != hdr_n) bad = 1;
+                pos += hdr_n; done_b = hdr_n;
+                for (int i = 0; i < nf && !bad; i++) {
+                    for (size_t o = 0; o < fl[i].n && !bad; ) {
+                        size_t c = fl[i].n - o; if (c > (1u << 20)) c = 1u << 20;
+                        if (R_FAILED(FSFILE_Write(h, &got, pos, fl[i].d + o, (u32)c, 0)) || got != c) bad = 1;
+                        o += c; pos += c; done_b += c; imp_prog(800 + (int)(190 * done_b / total), IS_WRITE);
+                    }
+                }
+                FSFILE_Flush(h); FSFILE_Close(h);
             }
         }
-        int bad = ferror(f); fclose(f);
+#endif
+        if (!wrote) {
+            FILE *f = fopen(tmp, "wb"); if (!f) { free(hdr); snprintf(err, errn, "cannot write %s", tmp); goto done; }
+            fwrite(hdr, 1, hdr_n, f); done_b = hdr_n;
+            for (int i = 0; i < nf; i++) {                      /* 64 KB at a time, with the bar moving after each piece */
+                for (size_t o = 0; o < fl[i].n; ) {
+                    size_t c = fl[i].n - o; if (c > (64u << 10)) c = 64u << 10;
+                    fwrite(fl[i].d + o, 1, c, f); o += c; done_b += c; imp_prog(800 + (int)(190 * done_b / total), IS_WRITE);
+                }
+            }
+            bad = ferror(f); fclose(f);
+        }
+        free(hdr); imp_mark("pack written, moving into place");
         if (bad) { snprintf(err, errn, "write failed (disk full?)"); remove(tmp); goto done; }
         remove(out_pack);
         if (rename(tmp, out_pack) != 0) { snprintf(err, errn, "could not move the pack into place"); goto done; }
