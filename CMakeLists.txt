@@ -95,6 +95,8 @@ if(NINTENDO_3DS OR CMAKE_SYSTEM_NAME STREQUAL "Nintendo3DS")
   # Nintendo 3DS (devkitARM + libctru + citro2d): cmake -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake. The result is pacnjump.3dsx for the Homebrew Launcher
   # or Azahar/Citra. SDL3 supplies audio, files, timers and threads here; drawing and input are in platform/n3ds/n3ds_gfx.h.
   target_compile_definitions(pacnjump PRIVATE PNJ_N3DS=1)
+  set(PNJ_3DS_TEX_FLIP 0 CACHE STRING "vertical flip in the texture upload copy (0 or 1)")
+  target_compile_definitions(pacnjump PRIVATE PNJ_N3DS_TEX_FLIP=${PNJ_3DS_TEX_FLIP})
   target_include_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/include)
   target_link_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/lib)
   target_link_libraries(pacnjump PRIVATE citro2d citro3d ctru m)

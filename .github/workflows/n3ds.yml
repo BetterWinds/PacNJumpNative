@@ -33,5 +33,8 @@ jobs:
           cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake -DCMAKE_BUILD_TYPE=Release -DPNJ_VERSION=$PNJ_VERSION
           cmake --build build
           ls -la build/*.3dsx
+          cmake -S . -B build-alt -G Ninja -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake -DCMAKE_BUILD_TYPE=Release -DPNJ_VERSION=$PNJ_VERSION -DPNJ_3DS_TEX_FLIP=1
+          cmake --build build-alt
+          mkdir -p out && cp build/pacnjump.3dsx out/pacnjump.3dsx && cp build-alt/pacnjump.3dsx out/pacnjump-flip1.3dsx
       - uses: actions/upload-artifact@v4
-        with: { name: "pacnjump-3ds-${{ env.PNJ_VERSION }}", path: build/pacnjump.3dsx }
+        with: { name: "pacnjump-3ds-${{ env.PNJ_VERSION }}", path: out/ }
