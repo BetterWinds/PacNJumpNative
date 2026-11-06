@@ -123,34 +123,26 @@ static void pnj_line(pnj_gfx *g, float x0, float y0, float x1, float y1) {      
 #define SDL_RenderLine(r, a, b, c, d) pnj_line((r), (a), (b), (c), (d))
 
 /* ---------- textures ----------
- * Made from a decoded RGBA image, halved (alpha-weighted box average) when shrink > 1, packed to ARGB4444 and twiddled into video memory.
- * Returns NULL when video memory is full; the caller then frees the least recently drawn texture (dc_evict_lru) and tries again. */
+ * ARGB4444 twiddled into video memory. pnj_tex_from_4444 takes a ready 16-bit image (a .dtx file from the pack: nothing to decode);
+ * pnj_tex_make takes a decoded RGBA image (the PNG fallback), halves it when shrink > 1 and goes through the same upload.
+ * Both return NULL when video memory is full; the caller then frees the least recently drawn texture (dc_evict_lru) and tries again. */
+#include "../sdl/dtx.h"
+static pnj_tex *pnj_tex_from_4444(const uint16_t *lin, int dw, int dh, int sharp) {
+    if (dw < 8 || dh < 8 || (dw & (dw - 1)) || (dh & (dh - 1)) || dw > 1024 || dh > 1024) return NULL;     /* the PVR wants powers of two */
+    pnj_tex *t = (pnj_tex *)calloc(1, sizeof *t); if (!t) return NULL;
+    pvr_ptr_t vram = pvr_mem_malloc((size_t)dw * dh * 2);
+    if (!vram) { free(t); return NULL; }
+    pvr_txr_load_ex(lin, vram, dw, dh, PVR_TXRLOAD_16BPP);
+    t->vram = vram; t->w = dw; t->h = dh; t->add = 0; t->alpha = 255; t->cr = t->cg = t->cb = 255; t->nearest = sharp; t->last = dc_frame;
+    return t;
+}
 static pnj_tex *pnj_tex_make(const unsigned char *px, int w, int h, int shrink, int sharp) {
     if (shrink < 1) shrink = 1;
     int dw = w / shrink, dh = h / shrink;
-    if (dw < 8 || dh < 8 || (dw & (dw - 1)) || (dh & (dh - 1)) || dw > 1024 || dh > 1024) return NULL;     /* the PVR wants powers of two */
-    size_t bytes = (size_t)dw * dh * 2;
-    pvr_ptr_t vram = pvr_mem_malloc(bytes); if (!vram) return NULL;
-    uint16_t *lin = (uint16_t *)memalign(32, bytes);
-    pnj_tex *t = (pnj_tex *)calloc(1, sizeof *t);
-    if (!lin || !t) { free(lin); free(t); pvr_mem_free(vram); return NULL; }
-    for (int y = 0; y < dh; y++) for (int x = 0; x < dw; x++) {
-        unsigned r, g, b, a;
-        if (shrink > 1) {
-            unsigned sa = 0, sr = 0, sg = 0, sb = 0;
-            for (int j = 0; j < shrink; j++) for (int i = 0; i < shrink; i++) {
-                const unsigned char *q = px + ((size_t)(y * shrink + j) * w + (x * shrink + i)) * 4;
-                sa += q[3]; sr += q[0] * q[3]; sg += q[1] * q[3]; sb += q[2] * q[3];
-            }
-            if (sa) { r = sr / sa; g = sg / sa; b = sb / sa; } else r = g = b = 0;
-            a = sa / (unsigned)(shrink * shrink);
-        } else { const unsigned char *p = px + ((size_t)y * w + x) * 4; r = p[0]; g = p[1]; b = p[2]; a = p[3]; }
-        lin[(size_t)y * dw + x] = (uint16_t)((((a * 15 + 127) / 255) << 12) | (((r * 15 + 127) / 255) << 8) | (((g * 15 + 127) / 255) << 4) | ((b * 15 + 127) / 255));
-    }
-    pvr_txr_load_ex(lin, vram, dw, dh, PVR_TXRLOAD_16BPP);
-    free(lin);
-    t->vram = vram; t->w = dw; t->h = dh; t->add = 0; t->alpha = 255; t->cr = t->cg = t->cb = 255; t->nearest = sharp; t->last = dc_frame;
-    return t;
+    uint16_t *lin = (uint16_t *)memalign(32, (size_t)dw * dh * 2); if (!lin) return NULL;
+    pnj_pack4444(px, w, h, shrink, lin);
+    pnj_tex *t = pnj_tex_from_4444(lin, dw, dh, sharp);
+    free(lin); return t;
 }
 static void pnj_tex_free(pnj_tex *t) { if (!t) return; pvr_mem_free(t->vram); free(t); }
 /* free the texture that has gone longest without being drawn (not one drawn in the last two frames: the PVR may still be reading it). 1 if one was freed. */
