@@ -1,6 +1,6 @@
 # Pac'N-Jump native
 
-A port of Pac'N-Jump (Namco, 2011), a mobile game that was pulled from the stores. Portable C99 core, SDL2 shell. Runs on Android, Windows, macOS and Linux. All 8 stages, menus, help and achievements are in.
+A port of Pac'N-Jump (Namco, 2011), a mobile game that was pulled from the stores. Portable C99 core, SDL3 shell. Runs on Android, Windows, macOS and Linux. All 8 stages, menus, help and achievements are in.
 
 **This repo has none of the original game's art, sound or level data.** The game reads all of it from a `pnj.pack` file at run time. The game builds that file from your own copy of the original Android APK (`com.namcobandaigames.pacnjump_and.apk`), so you need to bring the APK.
 
@@ -58,7 +58,7 @@ cmake --build build                   # build/pacnjump
 cmake --build build --target bundle   # macOS: PacNJump.app
 ```
 
-CMake builds the bundled SDL 2.30.9 statically unless you pass `-DPNJ_SYSTEM_SDL=ON`. For quick dev builds, `make -f pnj.mk` works too (needs the SDL2 dev package), and `make -f pnj.mk test` runs a headless smoke test.
+CMake builds the bundled SDL3 (a submodule, hence `--recursive`) statically unless you pass `-DPNJ_SYSTEM_SDL=ON`. For quick dev builds, `make -f pnj.mk` works too (needs the SDL3 dev package), and `make -f pnj.mk test` runs a headless smoke test.
 
 Import from a terminal with `pacnjump --import game.apk`. `python tools/make_pack.py game.apk` also writes a `pnj.pack`, but the power-up jingle needs ffmpeg on that route. The importer built into the app decodes the jingle itself.
 
@@ -68,7 +68,7 @@ To build the template locally, `android\package.bat template` writes `web/templa
 
 ```
 core/            portable C99 game core: physics, camera, generator, RNG, draw list, input model
-platform/sdl/    SDL2 shell: main.c (render, input), menus.h, audio.h, pack.h (finds and reads pnj.pack),
+platform/sdl/    SDL3 shell: main.c (render, input), menus.h, audio.h, pack.h (finds and reads pnj.pack),
                  import.h (APK to pack), aac_dec.c (jingle decoder), atlas.h
 android/         Android Studio project (SDL Java glue, CMake into ../core, file picker activity)
 web/             the browser APK builder: builder.js (APK to pack to signed APK, client side), index.html
@@ -102,6 +102,35 @@ To compile the 42 maps into the binary for a personal build, run `python tools/g
 ## What is in the repo
 
 No art, sound, level data, sprite table or Help text. What is in the repo is the game's rules written as C (physics constants, platform and enemy generator tables, scoring) after watching how the original behaves, plus short UI labels and stage names.
+
+## Roadmap
+
+**Now: a public release.** Windows, macOS, Linux and Android are the supported builds. The work left is testing on real hardware (Linux, macOS HDR, handhelds), Windows code signing through the SignPath Foundation, and release notes. No new platforms until that is out.
+
+**Later, on the current platforms:** language select (the pack already carries every language file), tilt input (the original was tilt-controlled), foldable and two-screen Android phones, a 32-bit Android build.
+
+**Ports in progress (branches, not in the release).** Each one merges into `main` after it passes on real hardware.
+
+| Platform | Branch | State |
+| --- | --- | --- |
+| PS Vita | `vita` | Runs in Vita3K, tate included. Real Vita test pending. |
+| Nintendo 3DS | `3ds` | Runs in Azahar, with sound. Stereo 3D is in and needs testing, and so does real hardware. |
+| Dreamcast | `dreamcast` | Boots in Flycast and plays from a CDI with your own pack. Loading times, tate and 60 fps are open. |
+
+**Future platforms.** Nothing here is started. Roughly easiest first.
+
+| Platform | Route | Main work |
+| --- | --- | --- |
+| Nintendo Switch | devkitA64 and libnx, the SDL shell mostly carries over | Build target, pack on the SD card, pillarboxed portrait field |
+| iOS | The SDL shell built in Xcode, import through the Files app | Xcode project, CI build, and how to distribute it (a sideload or TestFlight, since the data has to come from the player's own APK) |
+| Nintendo DS | devkitARM and libnds, two 256x192 screens stack to 256x384 | No FPU, so a fixed-point core, and art and audio cut down for 4 MB of RAM |
+| Game Boy Advance, Analogue Pocket | devkitARM, the Pocket through its GBA support | An adaptation more than a port: no FPU, tile and palette art, 240x160 landscape screen |
+| MS-DOS (486, Pentium) | DJGPP with a VESA and Sound Blaster layer | 256-color art with a palette reserved for glow, software sprites |
+| Sega Saturn | libyaul or Jo Engine | Fixed-point core, VDP1 and VDP2 setup, palettised art |
+| Atari Jaguar, Jaguar CD | m68k plus Tom and Jerry RISC code | Fixed-point core, 2 MB RAM, hand-written blitter code. The CD version could stream music |
+| Virtual Boy | The community V810 toolchain, VUEngine | Research. 64 KB of RAM, four shades of red, audio rewritten for the wavetable channels |
+
+The small and old targets share two prerequisites: a per-target mode in `tools/make_pack.py` that scales, palettizes and re-encodes art and audio, and a float or fixed-point build of the core with a replay test that proves it plays the same run as the double build. There is no route to PS5, since there is no public homebrew SDK.
 
 ## Code signing policy
 
