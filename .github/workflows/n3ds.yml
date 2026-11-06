@@ -58,7 +58,7 @@ jobs:
           chmod a+x $DEVKITPRO/tools/bin/bannertool $DEVKITPRO/tools/bin/makerom
           wget -q -O app.rsf https://gist.githubusercontent.com/jakcron/9f9f02ffd94d98a72632/raw/19df015e8a99ea9d6fcf9bfcf6da65db8ec6dc70/app.rsf
           grep -n "Title\|ProductCode\|UniqueId" app.rsf | head
-          sed -i -e 's/"CtrApp"/"PacNJump"/' -e 's/CTR-P-CTAP/CTR-P-PNJP/' -e 's/0xff3ff/0xf1a31/' app.rsf
+          sed -i -e 's/CtrApp/PacNJump/' -e 's/CTR-P-CTAP/CTR-P-PNJP/' -e 's/0xff3ff/0xf1a31/' app.rsf
           python3 - <<'PY'
           from PIL import Image
           import wave
