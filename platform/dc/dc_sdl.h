@@ -6,6 +6,8 @@
 #ifndef PNJ_DC_SDL_H
 #define PNJ_DC_SDL_H
 
+#define PNJ_INTERP 1        /* the screen runs at 60 Hz but the game steps at 40: blend the last two steps when drawing (platform/sdl/interp.h) */
+
 #include <kos.h>
 #include <stdint.h>
 #include <stdbool.h>

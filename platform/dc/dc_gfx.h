@@ -14,7 +14,7 @@
 
 #define PNJ_DC_FIELD_X 160.0f
 
-typedef struct pnj_tex { pvr_ptr_t vram; int w, h; int add, alpha, cr, cg, cb, nearest; unsigned last; } pnj_tex;
+typedef struct pnj_tex { pvr_ptr_t vram; int w, h; int add, alpha, cr, cg, cb, nearest, vq; unsigned last; } pnj_tex;
 typedef struct pnj_win { int unused; } pnj_win;
 typedef struct { uint32_t clr; int draw_add; float ox, oy, sc; int hkind, hadd, hnear; const pnj_tex *htex; } pnj_gfx;
 #define SDL_Renderer pnj_gfx
@@ -50,7 +50,7 @@ static void dc_hdr_col(pnj_gfx *g, int add) {
 static void dc_hdr_tex(pnj_gfx *g, const pnj_tex *t) {
     if (g->hkind == 2 && g->htex == t && g->hadd == t->add && g->hnear == t->nearest) return;
     pvr_poly_cxt_t cx; pvr_poly_hdr_t h;
-    pvr_poly_cxt_txr(&cx, PVR_LIST_TR_POLY, PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_TWIDDLED, t->w, t->h, t->vram, t->nearest ? PVR_FILTER_NEAREST : PVR_FILTER_BILINEAR);
+    pvr_poly_cxt_txr(&cx, PVR_LIST_TR_POLY, PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_TWIDDLED | (t->vq ? PVR_TXRFMT_VQ_ENABLE : 0), t->w, t->h, t->vram, t->nearest ? PVR_FILTER_NEAREST : PVR_FILTER_BILINEAR);
     cx.gen.alpha = true; cx.gen.culling = PVR_CULLING_NONE;
     cx.blend.src = PVR_BLEND_SRCALPHA; cx.blend.dst = t->add ? PVR_BLEND_ONE : PVR_BLEND_INVSRCALPHA;
     cx.txr.env = PVR_TXRENV_MODULATEALPHA; cx.txr.uv_clamp = PVR_UVCLAMP_UV;
@@ -64,8 +64,21 @@ static inline void dc_vtx(float x, float y, float u, float v, uint32_t argb, int
     vt.x = x; vt.y = y; vt.z = 1.0f; vt.u = u; vt.v = v; vt.argb = argb; vt.oargb = 0;
     pvr_prim(&vt, sizeof vt);
 }
+/* Tate: the picture is turned a quarter turn so a TV stood on its side shows the portrait field upright. 1 = the top of the game is on the left of the
+ * signal, 2 = on the right. The 480 tall field becomes the 640 long side, so everything is drawn 4/3 larger and the 320 wide field lands 427 across the 480. */
+static int dc_tate;
+#define PNJ_DC_TATE_K (640.0f / 480.0f)
 /* corners: a top-left, b top-right, c bottom-left, d bottom-right; sent as a strip c a d b */
-static inline void dc_quad(const float *p, float u0, float v0, float u1, float v1, uint32_t argb) {
+static inline void dc_quad(const float *pin, float u0, float v0, float u1, float v1, uint32_t argb) {
+    float q[8];
+    if (dc_tate) {
+        for (int i = 0; i < 8; i += 2) {
+            float fu = pin[i] - (PNJ_DC_FIELD_X + 160.0f), fv = pin[i + 1] - 240.0f;
+            if (dc_tate == 1) { q[i] = 320.0f + fv * PNJ_DC_TATE_K; q[i + 1] = 240.0f - fu * PNJ_DC_TATE_K; }
+            else              { q[i] = 320.0f - fv * PNJ_DC_TATE_K; q[i + 1] = 240.0f + fu * PNJ_DC_TATE_K; }
+        }
+    } else memcpy(q, pin, sizeof q);
+    const float *p = q;
     dc_vtx(p[4], p[5], u0, v1, argb, 0);
     dc_vtx(p[0], p[1], u0, v0, argb, 0);
     dc_vtx(p[6], p[7], u1, v1, argb, 0);
@@ -78,10 +91,18 @@ static void pnj_gfx_begin(pnj_gfx *g) {
     dc_frame++; g->hkind = 0;
 }
 static void pnj_gfx_end(pnj_gfx *g) {
-    float a[8], b[8];                                                    /* black bars over whatever stuck out of the 320 wide field */
-    a[0] = 0; a[1] = 0; a[2] = PNJ_DC_FIELD_X; a[3] = 0; a[4] = 0; a[5] = 480; a[6] = PNJ_DC_FIELD_X; a[7] = 480;
-    b[0] = PNJ_DC_FIELD_X + 320; b[1] = 0; b[2] = 640; b[3] = 0; b[4] = b[0]; b[5] = 480; b[6] = 640; b[7] = 480;
+    float a[8], b[8];                                                    /* black bars over whatever stuck out of the field */
+    int tate = dc_tate; dc_tate = 0;
+    if (tate) {                                                          /* the turned field is 427 across the 480: bars above and below */
+        float e = 240.0f - 160.0f * PNJ_DC_TATE_K;
+        a[0] = 0; a[1] = 0; a[2] = 640; a[3] = 0; a[4] = 0; a[5] = e; a[6] = 640; a[7] = e;
+        b[0] = 0; b[1] = 480.0f - e; b[2] = 640; b[3] = 480.0f - e; b[4] = 0; b[5] = 480; b[6] = 640; b[7] = 480;
+    } else {
+        a[0] = 0; a[1] = 0; a[2] = PNJ_DC_FIELD_X; a[3] = 0; a[4] = 0; a[5] = 480; a[6] = PNJ_DC_FIELD_X; a[7] = 480;
+        b[0] = PNJ_DC_FIELD_X + 320; b[1] = 0; b[2] = 640; b[3] = 0; b[4] = b[0]; b[5] = 480; b[6] = 640; b[7] = 480;
+    }
     dc_hdr_col(g, 0); dc_quad(a, 0, 0, 0, 0, 0xff000000u); dc_quad(b, 0, 0, 0, 0, 0xff000000u);
+    dc_tate = tate;
     pvr_list_finish(); pvr_scene_finish();
 }
 static void pnj_gfx_screen(pnj_gfx *g) { g->ox = PNJ_DC_FIELD_X; g->oy = 0.0f; g->sc = 1.0f; }
@@ -134,6 +155,19 @@ static pnj_tex *pnj_tex_from_4444(const uint16_t *lin, int dw, int dh, int sharp
     if (!vram) { free(t); return NULL; }
     pvr_txr_load_ex(lin, vram, dw, dh, PVR_TXRLOAD_16BPP);
     t->vram = vram; t->w = dw; t->h = dh; t->add = 0; t->alpha = 255; t->cr = t->cg = t->cb = 255; t->nearest = sharp; t->last = dc_frame;
+    return t;
+}
+/* a DTX2 sheet: the PowerVR's own VQ format (2048-byte codebook, then one index per 2x2 block), already twiddled, so it is copied into video memory as it is */
+static pnj_tex *pnj_tex_from_vq(const unsigned char *d, int dw, int dh, int sharp) {
+    if (dw < 8 || dw != dh || (dw & (dw - 1)) || dw > 1024) return NULL;
+    size_t bytes = 2048 + (size_t)(dw / 2) * (dh / 2);
+    pnj_tex *t = (pnj_tex *)calloc(1, sizeof *t); if (!t) return NULL;
+    pvr_ptr_t vram = pvr_mem_malloc(bytes);
+    if (!vram) { free(t); return NULL; }
+    unsigned char *al = (unsigned char *)memalign(32, (bytes + 31) & ~(size_t)31);           /* the store queues want an aligned source */
+    if (!al) { pvr_mem_free(vram); free(t); return NULL; }
+    memcpy(al, d, bytes); pvr_txr_load(al, vram, bytes); free(al);
+    t->vram = vram; t->w = dw; t->h = dh; t->add = 0; t->alpha = 255; t->cr = t->cg = t->cb = 255; t->nearest = sharp; t->vq = 1; t->last = dc_frame;
     return t;
 }
 static pnj_tex *pnj_tex_make(const unsigned char *px, int w, int h, int shrink, int sharp) {

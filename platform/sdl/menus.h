@@ -104,11 +104,22 @@ static void save_apply(void) {
     sfx_on = SV.sfx_on && SV.sfx_vol > 0; mus_on = SV.mus_on && SV.mus_vol > 0; sfx_vol = SV.sfx_vol; mus_vol = SV.mus_vol * 0.8f;
     ctrl_analog = SV.analog; IN.snappy = SV.snappy;
 }
-static void save_write(void) {
+static void save_flush_now(void) {
     if (!save_path[0]) return;
     FILE *f = fopen(save_path, "wb"); if (!f) return;
     fwrite(&SV, sizeof SV, 1, f); fclose(f);
 }
+#ifdef PNJ_DC
+/* A write to the memory card stalls the game for a moment, so leaving a menu must not wait for one: the change is marked and written once things
+ * have been quiet for a couple of seconds (save_tick), or right away at a loading screen or the end of a run (save_commit). */
+static int save_dirty, save_idle;
+static void save_write(void) { save_dirty = 1; save_idle = 0; }
+static void save_commit(void) { if (save_dirty) { save_dirty = 0; save_flush_now(); } }
+static void save_tick(void) { if (save_dirty && ++save_idle > 80) save_commit(); }
+#else
+static void save_write(void) { save_flush_now(); }
+static void save_commit(void) {}
+#endif
 static void save_load(void) {
     memset(&SV, 0, sizeof SV);
     SV.magic = 0x504e4a31; SV.sfx_on = SV.mus_on = 1; SV.sfx_vol = 0.8f; SV.mus_vol = 0.7f; ctl_defaults(&SV);
@@ -184,8 +195,8 @@ enum { H_NONE, H_TITLE, H_PLAY, H_RECORD, H_OPTION, H_BACK, H_PREV, H_NEXT, H_ST
 #ifdef __vita__
 #define PNJ_VITA 1
 #endif
-#if defined(PNJ_DESKTOP) || defined(PNJ_VITA)
-#define PNJ_HAS_VIDEO 1     /* the Video screen: desktop has fullscreen, rotation, scale and HDR; the Vita has rotation and scale */
+#if defined(PNJ_DESKTOP) || defined(PNJ_VITA) || defined(PNJ_DC)
+#define PNJ_HAS_VIDEO 1     /* the Video screen: desktop has fullscreen, rotation, scale and HDR; the Vita has rotation and scale; the Dreamcast has rotation (tate) */
 #endif
 typedef struct { int x, y, w, h, id; } hit_t;
 static hit_t hits[40]; static int nhits;
@@ -434,9 +445,15 @@ static void draw_menu(SDL_Renderer *r) {
         ftext(r, "ROTATION", 20, vy + 29, 11, row_rgb(H_ORIENT, 0xaaaaaa), 1, 1);
         btn(r, orient_name(SV.orient), 150, vy, 164, 38, H_ORIENT, menu_fill(H_ORIENT, 0xb4b4d2), 12, 0);
         vy += 60;
+#ifdef PNJ_DC
+        ftext(r, "TATE TURNS THE PICTURE A QUARTER TURN.", 160, vy + 6, 8, 0xcccccc, 0, 1);
+        ftext(r, "STAND YOUR TV ON ITS SIDE: LEFT IF THE", 160, vy + 22, 8, 0xcccccc, 0, 1);
+        ftext(r, "TOP OF THE GAME IS ON ITS LEFT, ELSE RIGHT.", 160, vy + 38, 8, 0xcccccc, 0, 1);
+#else
         ftext(r, "SCALE", 20, vy + 21, 11, row_rgb(H_SCALE, 0xaaaaaa), 1, 1);
         btn(r, SV.intscale ? "INT SCALE" : "SMOOTH", 150, vy, 164, 38, H_SCALE, menu_fill(H_SCALE, 0xb4b4d2), 12, 0);
         vy += 60;
+#endif
 #ifdef PNJ_DESKTOP
         ftext(r, "HDR", 20, vy + 21, 11, row_rgb(H_HDR, 0xaaaaaa), 1, 1);
         btn(r, SV.hdr ? "ON" : "OFF", 150, vy, 164, 38, H_HDR, SV.hdr ? 0xffe07a : menu_fill(H_HDR, 0xb4b4d2), 12, 0);
@@ -694,7 +711,7 @@ static void run_finished(void) {
     SV.total = SV.total + h > 999999999 ? 999999999 : SV.total + h;
     over_nach = 0;
     for (int i = 0; i < 90; i++) if (!ach_done_with(i, tops0, total0) && ach_done(i)) over_ach[over_nach++] = i;
-    save_write();
+    save_write(); save_commit();
     audio_play(over_new ? A_HISCORE : A_GAMEOVER);
     sel_stage = cur_stage; ui_enter(UI_OVER);
 }
