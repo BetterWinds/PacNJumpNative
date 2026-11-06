@@ -11,6 +11,9 @@
  */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#ifdef PNJ_N3DS
+#include "../n3ds/n3ds_gfx.h"        /* swaps SDL's window and renderer calls for citro2d; see that file */
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,8 +87,14 @@ static SDL_Texture *get_tex(SDL_Renderer *r, int i) {
     unsigned char *px = buf ? stbi_load_from_memory(buf, (int)n, &w, &h, &c, 4) : 0;
     free(buf);
     if (!px) { TEXW[i] = -1; SDL_Log("missing texture %s", name); return 0; }
+#ifdef PNJ_N3DS
+    int half = w >= 512;                                    /* the sheets are drawn at half their size; see n3ds_gfx.h */
+    SDL_Texture *t = pnj_tex_make(px, w, h, half, 0); if (t) w = t->w;
+    (void)r;
+#else
     SDL_Texture *t = SDL_CreateTexture(r, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, w, h);
     if (t) { SDL_UpdateTexture(t, NULL, px, w * 4); SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND); SDL_SetTextureScaleMode(t, tex_sharp ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR); }
+#endif
     stbi_image_free(px);
     TEX[i] = t; TEXW[i] = w;
     return t;
@@ -191,7 +200,7 @@ static int do_import(const char *apk, const char *outpath) {
     return 1;
 }
 static int ends_apk(const char *s) { size_t l = strlen(s); return l > 4 && !SDL_strcasecmp(s + l - 4, ".apk"); }
-#if defined(__ANDROID__) || defined(__vita__)
+#if defined(__ANDROID__) || defined(__vita__) || defined(PNJ_N3DS)
 #include <dirent.h>
 static int import_start(const char *apk, const char *outpath, int rm);
 static void scan_for_apk(void) {                      /* Android and Vita: pick up any .apk copied into the app's own folder (each file is tried once) */
@@ -216,7 +225,7 @@ static void scan_for_apk(void) {                      /* Android and Vita: pick 
 #define PNJ_VERSION "dev"
 #endif
 #ifndef __ANDROID__
-#ifndef __vita__
+#if !defined(__vita__) && !defined(PNJ_N3DS)
 static const char *DATA_HELP = "Pac'N-Jump needs the game data from your own copy of the original Android APK.\n\nDrag the APK onto this window, or run:  pnj --import game.apk";
 #endif
 #endif
@@ -247,16 +256,21 @@ static void tf_text(SDL_Renderer *r, const char *s, double cx, double y, int sc,
 static struct { SDL_Thread *th; volatile int busy, done, ok; char apk[1100], out[700], err[240]; int rm; } IJ;
 static int import_thread(void *p) { (void)p; IJ.ok = import_apk(IJ.apk, IJ.out, IJ.err, sizeof IJ.err); IJ.done = 1; return 0; }
 /* returns 0 (with imp_msg set) if it could not start. rm: delete the apk afterwards (Android hands us a temporary copy) */
+#ifdef PNJ_N3DS
+#define PNJ_IMPORT_STACK (512 * 1024)       /* the 3DS has far less memory than the Vita */
+#else
+#define PNJ_IMPORT_STACK (1024 * 1024)
+#endif
 static int import_start(const char *apk, const char *outpath, int rm) {
     if (IJ.busy) return 0;
     if (outpath) snprintf(IJ.out, sizeof IJ.out, "%s", outpath);
     else { if (!data_dir()[0]) { snprintf(imp_msg, sizeof imp_msg, "no writable data folder"); return 0; } data_path(IJ.out, sizeof IJ.out, "pnj.pack"); }
     snprintf(IJ.apk, sizeof IJ.apk, "%s", apk); IJ.rm = rm; IJ.done = 0; IJ.ok = 0; IJ.err[0] = 0; imp_prog(0, IS_OPEN);
-#ifdef __vita__
-    { SDL_PropertiesID tp = SDL_CreateProperties();                   /* the Vita's default thread stack is small */
+#if defined(__vita__) || defined(PNJ_N3DS)
+    { SDL_PropertiesID tp = SDL_CreateProperties();                   /* the console default thread stacks are small */
       SDL_SetPointerProperty(tp, SDL_PROP_THREAD_CREATE_ENTRY_FUNCTION_POINTER, (void *)import_thread);
       SDL_SetStringProperty(tp, SDL_PROP_THREAD_CREATE_NAME_STRING, "import");
-      SDL_SetNumberProperty(tp, SDL_PROP_THREAD_CREATE_STACKSIZE_NUMBER, 1024 * 1024);
+      SDL_SetNumberProperty(tp, SDL_PROP_THREAD_CREATE_STACKSIZE_NUMBER, PNJ_IMPORT_STACK);
       IJ.th = SDL_CreateThreadWithProperties(tp); SDL_DestroyProperties(tp); }
 #else
     IJ.th = SDL_CreateThread(import_thread, "import", NULL);
@@ -292,12 +306,16 @@ static void draw_import(SDL_Renderer *r) {                  /* 320x480 field coo
 #ifndef __ANDROID__
 static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet */
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255); SDL_RenderClear(r);
-#ifdef __vita__
+#if defined(__vita__) || defined(PNJ_N3DS)
     { char path[160]; snprintf(path, sizeof path, "%s", data_dir());
       for (char *c = path; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32;
       tf_text(r, "COPY YOUR PAC'N-JUMP", 160, 150, 2, 255, 224, 122);
       tf_text(r, "APK INTO THIS FOLDER", 160, 176, 2, 255, 224, 122);
+#ifdef PNJ_N3DS
+      tf_text(r, "ON THE SD CARD", 160, 202, 2, 255, 224, 122);
+#else
       tf_text(r, "ON THE VITA", 160, 202, 2, 255, 224, 122);
+#endif
       tf_text(r, path, 160, 262, 1, 255, 255, 255);
       tf_text(r, "THE ORIGINAL ANDROID FILE", 160, 320, 1, 170, 170, 190);
       tf_text(r, "THE GAME FINDS IT BY ITSELF", 160, 340, 1, 170, 170, 190); }
@@ -315,6 +333,7 @@ static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet
 /* ---------- frame ---------- */
 #include "menus.h"
 
+#ifndef PNJ_N3DS
 /* ---------- renderer and HDR state ---------- */
 static int hdr_possible = 1;                                /* 0 once a renderer would not give us linear output (no HDR backend on this system) */
 static SDL_Renderer *make_renderer(SDL_Window *win, int want_hdr) {
@@ -436,6 +455,27 @@ static void mouse_field(SDL_Window *w, SDL_Renderer *rr, float x, float y, float
 static void finger_field(SDL_Window *w, SDL_Renderer *rr, float nx, float ny, float *lx, float *ly) {
     int ww, wh; SDL_GetWindowSize(w, &ww, &wh); mouse_field(w, rr, nx * ww, ny * wh, lx, ly);
 }
+#else
+/* ---------- 3DS: one renderer, two screens ---------- */
+static int hdr_possible = 0;
+static SDL_Renderer *make_renderer(SDL_Window *win, int want_hdr) { (void)win; (void)want_hdr; return pnj_gfx_open(); }
+static void hdr_poll(SDL_Renderer *r) { (void)r; }
+static SDL_Texture *tgt; static int tgt_w, tgt_h, t_cx, t_cy, applied_orient = -1, applied_scale = -1, applied_int = -1;
+static void orient_apply(SDL_Window *w, SDL_Renderer *rr) { (void)w; (void)rr; SV.orient = 0; }       /* no rotation or scale options on the 3DS */
+static void draw_current(SDL_Renderer *rr) {
+    if (IJ.busy) { draw_import(rr); return; }
+    if (need_data) { draw_drop_hint(rr); return; }
+    hdr_gain = 1.0f;
+    if (ui_mode == UI_PLAY) render(rr); else draw_menu(rr);
+}
+static void present_frame(SDL_Renderer *rr) {
+    pnj_gfx_begin(rr);
+    for (int s = 0; s < 2; s++) { pnj_gfx_screen(rr, s); draw_current(rr); }     /* the same field twice: top shows rows 0-239, the touch screen 240-479 */
+    pnj_gfx_end(rr);
+}
+static void mouse_field(SDL_Window *w, SDL_Renderer *rr, float x, float y, float *lx, float *ly) { (void)w; (void)rr; *lx = x; *ly = y; }
+static void finger_field(SDL_Window *w, SDL_Renderer *rr, float nx, float ny, float *lx, float *ly) { (void)w; (void)rr; *lx = nx * PNJ_W; *ly = ny * PNJ_H; }
+#endif
 
 /* ---------- remappable keys and pad ---------- */
 static int pad_l, pad_r, stick_l, stick_r;                  /* game controller: dpad and left stick as left/right */
@@ -548,6 +588,9 @@ static double current_tilt(void) {
     return t;
 }
 
+#ifdef PNJ_N3DS
+static int selftest(int steps, uint32_t seed, const char *bmp, int stage, int level) { (void)steps; (void)seed; (void)bmp; (void)stage; (void)level; return 2; }
+#else
 static int selftest(int steps, uint32_t seed, const char *bmp, int stage, int level) {
     SDL_Window *w = SDL_CreateWindow("pnj", PNJ_W, PNJ_H, SDL_WINDOW_HIDDEN);
     SDL_Renderer *r = w ? SDL_CreateRenderer(w, "software") : NULL;
@@ -574,6 +617,7 @@ static int selftest(int steps, uint32_t seed, const char *bmp, int stage, int le
     SDL_DestroySurface(s); SDL_DestroyRenderer(r); SDL_DestroyWindow(w);
     return 0;
 }
+#endif
 
 int main(int argc, char *argv[]) {
     int selftest_steps = 0; uint32_t seed = 0; const char *bmp = NULL; int st_arg = 0, lv_arg = 0; const char *pack_arg = NULL, *import_arg = NULL, *import_out = NULL; int packinfo = 0, audiotest = 0, start_fs = 0, cli_orient = -1, windowed = 0, cli_hdr = -1;
@@ -607,7 +651,12 @@ int main(int argc, char *argv[]) {
 #ifdef __vita__
     SDL_SetHint(SDL_HINT_VITA_ENABLE_BACK_TOUCH, "0");     /* the rear pad would send stray taps */
 #endif
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
+#ifdef PNJ_N3DS
+    if (!SDL_Init(SDL_INIT_EVENTS)) {                       /* no SDL video on the 3DS: citro2d owns the screens (n3ds_gfx.h) */
+#else
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+#endif
+        fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     no_bundle = getenv("PNJ_NO_BUNDLE") != NULL;
     if (pack_find(pack_arg)) { pack_load_maps(); SDL_Log("game data pack: %s (%d files, %d maps)", pack_path, PKN, PK_NMAPS); }
     data_loaded();
@@ -634,7 +683,9 @@ int main(int argc, char *argv[]) {
 
     if (getenv("SteamDeck") || getenv("SteamGamepadUI")) start_fs = 1;        /* Steam sets these when it launches a game on a Steam Deck */
     if (windowed) start_fs = 0;
-#ifdef __vita__
+#ifdef PNJ_N3DS
+    SDL_Window *win = SDL_CreateWindow("Pac'N-Jump", 320, 480, 0);
+#elif defined(__vita__)
     SDL_Window *win = SDL_CreateWindow("Pac'N-Jump", 960, 544, SDL_WINDOW_FULLSCREEN);
     if (!win) { fprintf(stderr, "window: %s\n", SDL_GetError()); return 1; }
 #else
@@ -653,12 +704,14 @@ int main(int argc, char *argv[]) {
     SDL_Renderer *r = make_renderer(win, applied_hdr);
     if (!r) { fprintf(stderr, "renderer: %s\n", SDL_GetError()); return 1; }
     SDL_SetRenderLogicalPresentation(r, PNJ_W, PNJ_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+#ifndef PNJ_N3DS
     SDL_InitSubSystem(SDL_INIT_GAMEPAD);
     { int ng = 0; SDL_JoystickID *ids = SDL_GetGamepads(&ng); for (int i = 0; i < ng; i++) SDL_OpenGamepad(ids[i]); SDL_free(ids); }
+#endif
 
     srand((unsigned)SDL_GetTicks()); ui_enter(UI_TITLE); orient_apply(win, r);
     need_data = !data_present();
-#if !defined(__ANDROID__) && !defined(__vita__)
+#if !defined(__ANDROID__) && !defined(__vita__) && !defined(PNJ_N3DS)
     if (need_data) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Game data needed", DATA_HELP, win);
 #endif
     if (seed) start_stage(0);
@@ -666,6 +719,9 @@ int main(int argc, char *argv[]) {
     double acc = 0; Uint64 last = SDL_GetPerformanceCounter(); int run = 1;
     while (run) {
         SDL_Event e;
+#ifdef PNJ_N3DS
+        pnj_n3ds_pump();                                    /* buttons, circle pad and touch screen -> SDL events */
+#endif
         while (SDL_PollEvent(&e)) {
             if (IJ.busy && e.type != SDL_EVENT_QUIT && e.type != SDL_EVENT_DROP_FILE && !(e.type >= SDL_EVENT_WINDOW_FIRST && e.type <= SDL_EVENT_WINDOW_LAST) && e.type != SDL_EVENT_WILL_ENTER_BACKGROUND && e.type != SDL_EVENT_DID_ENTER_FOREGROUND) continue;   /* importing: the window only draws the loader */
             switch (e.type) {
@@ -766,7 +822,7 @@ int main(int argc, char *argv[]) {
             last = SDL_GetPerformanceCounter(); acc = 0; continue;
         }
         if (need_data) {                                 /* nothing to play yet: wait for an APK */
-#if defined(__ANDROID__) || defined(__vita__)
+#if defined(__ANDROID__) || defined(__vita__) || defined(PNJ_N3DS)
             static int tick; if (++tick % 60 == 0) scan_for_apk();
 #endif
             orient_apply(win, r); present_frame(r); SDL_Delay(16);

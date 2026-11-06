@@ -1,0 +1,37 @@
+# Builds the Nintendo 3DS port (.3dsx) with devkitARM. Works on the 3ds branch and on tags; the 3dsx contains no game data.
+name: 3DS
+on:
+  push:
+    branches: ['3ds']
+    paths-ignore: ['web/**', 'android/**', '*.md']
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  n3ds:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Tools
+        run: |
+          export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
+          (dkp-pacman -Sy --noconfirm --needed 3ds-dev || true)
+          apt-get update && apt-get install -y --no-install-recommends cmake ninja-build git ca-certificates
+          ls $DEVKITPRO/libctru/lib | head; ls $DEVKITPRO/cmake
+      - name: Version
+        run: |
+          if [ "${{ github.ref_type }}" = tag ]; then v="${{ github.ref_name }}"; else v="b${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)"; fi
+          echo "PNJ_VERSION=$v" >> "$GITHUB_ENV"
+      - name: Build
+        run: |
+          export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
+          export DEVKITARM=$DEVKITPRO/devkitARM
+          export PATH=$DEVKITPRO/tools/bin:$DEVKITARM/bin:$PATH
+          cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake -DCMAKE_BUILD_TYPE=Release -DPNJ_VERSION=$PNJ_VERSION
+          cmake --build build
+          ls -la build/*.3dsx
+      - uses: actions/upload-artifact@v4
+        with: { name: "pacnjump-3ds-${{ env.PNJ_VERSION }}", path: build/pacnjump.3dsx }

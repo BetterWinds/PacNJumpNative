@@ -35,7 +35,7 @@ static int pack_has(const char *name) { for (int i = 0; i < PKN; i++) if (!strcm
 static char data_base[600];
 static const char *data_dir(void) {
     static int done; if (done) return data_base; done = 1;
-#if !defined(__ANDROID__) && !defined(__APPLE__) && !defined(__vita__)
+#if !defined(__ANDROID__) && !defined(__APPLE__) && !defined(__vita__) && !defined(PNJ_N3DS)
     const char *bp = SDL_GetBasePath();
     if (bp) {
         char t[700]; snprintf(t, sizeof t, "%spnj.tmp", bp);

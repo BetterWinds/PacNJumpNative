@@ -91,6 +91,17 @@ if(VITA)
     FILE ${CMAKE_SOURCE_DIR}/packaging/vita/sce_sys/livearea/contents/startup.png sce_sys/livearea/contents/startup.png
     FILE ${CMAKE_SOURCE_DIR}/packaging/vita/sce_sys/livearea/contents/template.xml sce_sys/livearea/contents/template.xml)
 endif()
+if(NINTENDO_3DS OR CMAKE_SYSTEM_NAME STREQUAL "Nintendo3DS")
+  # Nintendo 3DS (devkitARM + libctru + citro2d): cmake -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake. The result is pacnjump.3dsx for the Homebrew Launcher
+  # or Azahar/Citra. SDL3 supplies audio, files, timers and threads here; drawing and input are in platform/n3ds/n3ds_gfx.h.
+  target_compile_definitions(pacnjump PRIVATE PNJ_N3DS=1)
+  target_include_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/include)
+  target_link_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/lib)
+  target_link_libraries(pacnjump PRIVATE citro2d citro3d ctru m)
+  ctr_generate_smdh(pacnjump.smdh NAME "Pac'N-Jump" DESCRIPTION "Native port (bring your own APK)" AUTHOR "Jon Anderson"
+    ICON ${CMAKE_SOURCE_DIR}/packaging/n3ds/icon.png)
+  ctr_create_3dsx(pacnjump SMDH pacnjump.smdh)
+endif()
 if(WIN32)
   target_link_libraries(pacnjump PRIVATE mfuuid ole32)         # GUID definitions only; Media Foundation itself is loaded at run time (jingle_native.c)
 endif()
