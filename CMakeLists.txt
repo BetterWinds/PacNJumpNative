@@ -102,7 +102,7 @@ if(NINTENDO_3DS OR CMAKE_SYSTEM_NAME STREQUAL "Nintendo3DS")
   target_include_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/include $ENV{DEVKITPRO}/portlibs/3ds/include)
   target_link_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/lib $ENV{DEVKITPRO}/portlibs/3ds/lib)
   target_link_libraries(pacnjump PRIVATE opendsp citro2d citro3d ctru m)
-  ctr_generate_smdh(pacnjump.smdh NAME "Pac'N-Jump" DESCRIPTION "Native port (bring your own APK)" AUTHOR "Jon Anderson"
+  ctr_generate_smdh(pacnjump.smdh NAME "Pac'N-Jump" DESCRIPTION "Fan port, bring your own APK" AUTHOR " "
     ICON ${CMAKE_SOURCE_DIR}/packaging/n3ds/icon.png)
   ctr_create_3dsx(pacnjump SMDH pacnjump.smdh)
 endif()

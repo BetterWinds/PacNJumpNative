@@ -265,13 +265,13 @@ static const struct { char c; unsigned char r[7]; } TF[] = {
     {'%',{0x18,0x19,0x02,0x04,0x08,0x13,0x03}}, {'.',{0x00,0x00,0x00,0x00,0x00,0x0c,0x0c}}, {'-',{0x00,0x00,0x00,0x1f,0x00,0x00,0x00}}, {':',{0x00,0x0c,0x0c,0x00,0x0c,0x0c,0x00}},
     {'!',{0x04,0x04,0x04,0x04,0x04,0x00,0x04}}, {'\'',{0x04,0x04,0x08,0x00,0x00,0x00,0x00}}, {',',{0x00,0x00,0x00,0x00,0x0c,0x04,0x08}}, {'/',{0x01,0x01,0x02,0x04,0x08,0x10,0x10}} };
 static void tf_text(SDL_Renderer *r, const char *s, double cx, double y, int sc, Uint8 R, Uint8 G, Uint8 B) {
-    int n = (int)strlen(s); double x = cx - (n * 6 - 1) * sc / 2.0;
+    int n = (int)strlen(s); int x = (int)floor(cx - (n * 6 - 1) * sc / 2.0 + 0.5), yy = (int)floor(y + 0.5);   /* whole pixels only: a half-pixel start made the 3DS GPU round the dots unevenly and garble the letters */
     SDL_SetRenderDrawColor(r, R, G, B, 255);
     for (; *s; s++, x += 6 * sc) {
         for (size_t g = 0; g < sizeof TF / sizeof *TF; g++) if (TF[g].c == *s)
             for (int ry = 0; ry < 7; ry++) for (int rx = 0; rx < 5; rx++) if (TF[g].r[ry] >> (4 - rx) & 1) {
                 int run = 1; while (rx + run < 5 && (TF[g].r[ry] >> (4 - rx - run) & 1)) run++;      /* one rectangle per horizontal run: the 3DS can only draw so many per frame */
-                SDL_FRect q = { (float)(x + rx * sc), (float)(y + ry * sc), (float)(sc * run), (float)sc }; SDL_RenderFillRect(r, &q); rx += run - 1;
+                SDL_FRect q = { (float)(x + rx * sc), (float)(yy + ry * sc), (float)(sc * run), (float)sc }; SDL_RenderFillRect(r, &q); rx += run - 1;
             }
     }
 }
@@ -320,9 +320,7 @@ static void draw_import(SDL_Renderer *r) {                  /* 320x480 field coo
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255); SDL_RenderClear(r);
     int pm = imp_pm < 0 ? 0 : imp_pm > 1000 ? 1000 : imp_pm; char b[24];
 #ifdef PNJ_N3DS
-    /* top screen only (field rows 0..239); the touch screen stays black, so the bar is never split across the two */
-    if (r->cur != 0) return;
-    if (r->eye <= 0)                                        /* once per frame: the right eye redraws the same picture */
+    if (r->cur == 0 && r->eye <= 0)                         /* once per frame: the right eye and the touch screen redraw the same state */
 #endif
     {
         imp_shown += ((float)pm - imp_shown) * 0.10f;
@@ -332,16 +330,23 @@ static void draw_import(SDL_Renderer *r) {                  /* 320x480 field coo
     }
     int sh = (int)imp_shown;
 #ifdef PNJ_N3DS
+    /* Top screen: the title, the bar, the percentage and the step. Touch screen: the elapsed time and the notes, in larger type (field rows 240..479). */
+    char b2[16]; { unsigned sec = (unsigned)((SDL_GetTicks() - imp_t0) / 1000); snprintf(b2, sizeof b2, "%u:%02u", sec / 60, sec % 60); }
+    if (r->cur != 0) {
+        tf_text(r, b2, 160, 240 + 20, 3, 255, 255, 255);
+        tf_text(r, "THIS CAN TAKE", 160, 240 + 70, 2, 255, 224, 122);
+        tf_text(r, "A FEW MINUTES.", 160, 240 + 92, 2, 255, 224, 122);
+        tf_text(r, "IT ONLY HAPPENS ONCE.", 160, 240 + 128, 2, 255, 255, 255);
+        tf_text(r, "KEEP THE POWER ON AND", 160, 240 + 154, 2, 200, 200, 220);
+        tf_text(r, "THE SD CARD IN.", 160, 240 + 176, 2, 200, 200, 220);
+        return;
+    }
     tf_text(r, "IMPORTING GAME DATA", 160, 16, 3, 255, 224, 122);
     SDL_SetRenderDrawColor(r, 200, 200, 210, 255); SDL_FRect o = { 20, 62, 280, 24 }; SDL_RenderRect(r, &o);
     SDL_SetRenderDrawColor(r, 255, 224, 122, 255); SDL_FRect f = { 23, 65, (float)((274 * sh) / 1000), 18 }; SDL_RenderFillRect(r, &f);
     snprintf(b, sizeof b, "%d%%", sh / 10);
-    tf_text(r, b, 160, 98, 3, 255, 255, 255);
-    tf_text(r, imp_stage_name(imp_stage), 160, 134, 2, 170, 170, 190);
-    { unsigned sec = (unsigned)((SDL_GetTicks() - imp_t0) / 1000); snprintf(b, sizeof b, "%u:%02u", sec / 60, sec % 60); tf_text(r, b, 160, 160, 2, 120, 120, 140); }
-    tf_text(r, "THIS CAN TAKE A FEW MINUTES.", 160, 196, 1, 255, 255, 255);
-    tf_text(r, "IT ONLY HAPPENS ONCE. PLEASE KEEP", 160, 210, 1, 200, 200, 200);
-    tf_text(r, "THE POWER ON AND THE CARD IN.", 160, 224, 1, 200, 200, 200);
+    tf_text(r, b, 160, 106, 4, 255, 255, 255);
+    tf_text(r, imp_stage_name(imp_stage), 160, 160, 2, 170, 170, 190);
 #else
     tf_text(r, "IMPORTING", 160, 110, 4, 255, 224, 122);
     tf_text(r, "GAME DATA", 160, 150, 4, 255, 224, 122);

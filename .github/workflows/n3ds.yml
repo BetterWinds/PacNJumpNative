@@ -50,7 +50,7 @@ jobs:
         run: |
           export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
           export PATH=$DEVKITPRO/tools/bin:$PATH
-          apt-get install -y --no-install-recommends wget unzip python3-pil
+          apt-get install -y --no-install-recommends wget unzip python3
           wget -q https://github.com/diasurgical/bannertool/releases/download/1.2.0/bannertool.zip
           unzip -j bannertool.zip "linux-x86_64/bannertool" -d $DEVKITPRO/tools/bin
           wget -q https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18/makerom-v0.18-ubuntu_x86_64.zip
@@ -60,16 +60,11 @@ jobs:
           grep -n "Title\|ProductCode\|UniqueId" app.rsf | head
           sed -i -e 's/CtrApp/PacNJump/' -e 's/CTR-P-CTAP/CTR-P-PNJP/' -e 's/0xff3ff/0xf1a31/' app.rsf
           python3 - <<'PY'
-          from PIL import Image
           import wave
-          ic = Image.open("packaging/n3ds/icon.png").convert("RGBA")
-          bn = Image.new("RGBA", (256, 128), (16, 16, 40, 255))
-          bn.alpha_composite(ic.resize((96, 96), Image.NEAREST), (80, 16))
-          bn.save("banner.png")
           w = wave.open("silence.wav", "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(22050); w.writeframes(b"\0\0" * 22050); w.close()
           PY
-          bannertool makebanner -i banner.png -a silence.wav -o banner.bnr
-          bannertool makesmdh -s "Pac'N-Jump" -l "Pac'N-Jump native port (bring your own APK)" -p "Jon Anderson" -i packaging/n3ds/icon.png -o icon.icn
+          bannertool makebanner -i packaging/n3ds/banner.png -a silence.wav -o banner.bnr
+          bannertool makesmdh -s "Pac'N-Jump" -l "Pac'N-Jump" -p " " -i packaging/n3ds/icon.png -o icon.icn
           ELF=$(ls build/pacnjump.elf build/pacnjump 2>/dev/null | head -1); echo "elf: $ELF"
           makerom -f cia -o out/pacnjump.cia -elf "$ELF" -rsf app.rsf -target t -exefslogo -icon icon.icn -banner banner.bnr
           ls -la out
