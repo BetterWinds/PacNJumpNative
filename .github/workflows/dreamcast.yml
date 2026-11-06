@@ -22,6 +22,9 @@ jobs:
         run: |
           mkdir -p out
           docker run --rm -v "$PWD:/work" -e KOS_COMMIT -e PNJ_VERSION pcercuei/dreamcast-toolchain:stable sh /work/tools/ci/dc_build.sh
+      - name: Disc tool log
+        if: always()
+        run: cat out/disc-log.txt || true
       - uses: actions/upload-artifact@v4
         with:
           name: pacnjump-dc-${{ env.PNJ_VERSION }}
