@@ -269,7 +269,10 @@ static void tf_text(SDL_Renderer *r, const char *s, double cx, double y, int sc,
     SDL_SetRenderDrawColor(r, R, G, B, 255);
     for (; *s; s++, x += 6 * sc) {
         for (size_t g = 0; g < sizeof TF / sizeof *TF; g++) if (TF[g].c == *s)
-            for (int ry = 0; ry < 7; ry++) for (int rx = 0; rx < 5; rx++) if (TF[g].r[ry] >> (4 - rx) & 1) { SDL_FRect q = { (float)(x + rx * sc), (float)(y + ry * sc), (float)sc, (float)sc }; SDL_RenderFillRect(r, &q); }
+            for (int ry = 0; ry < 7; ry++) for (int rx = 0; rx < 5; rx++) if (TF[g].r[ry] >> (4 - rx) & 1) {
+                int run = 1; while (rx + run < 5 && (TF[g].r[ry] >> (4 - rx - run) & 1)) run++;      /* one rectangle per horizontal run: the 3DS can only draw so many per frame */
+                SDL_FRect q = { (float)(x + rx * sc), (float)(y + ry * sc), (float)(sc * run), (float)sc }; SDL_RenderFillRect(r, &q); rx += run - 1;
+            }
     }
 }
 static float imp_shown;                                     /* the loader bar's own position, permille: it eases toward the real progress and creeps a little ahead of it, so it never looks stuck */
@@ -316,11 +319,30 @@ static const char *imp_stage_name(int s) {
 static void draw_import(SDL_Renderer *r) {                  /* 320x480 field coordinates */
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255); SDL_RenderClear(r);
     int pm = imp_pm < 0 ? 0 : imp_pm > 1000 ? 1000 : imp_pm; char b[24];
-    imp_shown += ((float)pm - imp_shown) * 0.10f;
-    if (imp_shown < (float)pm + 12.0f && pm < 1000) imp_shown += 0.25f;
-    if (imp_shown > 1000.0f) imp_shown = 1000.0f;
-    if (pm >= 1000) imp_shown = 1000.0f;
+#ifdef PNJ_N3DS
+    /* top screen only (field rows 0..239); the touch screen stays black, so the bar is never split across the two */
+    if (r->cur != 0) return;
+    if (r->eye <= 0)                                        /* once per frame: the right eye redraws the same picture */
+#endif
+    {
+        imp_shown += ((float)pm - imp_shown) * 0.10f;
+        if (imp_shown < (float)pm + 12.0f && pm < 1000) imp_shown += 0.25f;
+        if (imp_shown > 1000.0f) imp_shown = 1000.0f;
+        if (pm >= 1000) imp_shown = 1000.0f;
+    }
     int sh = (int)imp_shown;
+#ifdef PNJ_N3DS
+    tf_text(r, "IMPORTING GAME DATA", 160, 16, 3, 255, 224, 122);
+    SDL_SetRenderDrawColor(r, 200, 200, 210, 255); SDL_FRect o = { 20, 62, 280, 24 }; SDL_RenderRect(r, &o);
+    SDL_SetRenderDrawColor(r, 255, 224, 122, 255); SDL_FRect f = { 23, 65, (float)((274 * sh) / 1000), 18 }; SDL_RenderFillRect(r, &f);
+    snprintf(b, sizeof b, "%d%%", sh / 10);
+    tf_text(r, b, 160, 98, 3, 255, 255, 255);
+    tf_text(r, imp_stage_name(imp_stage), 160, 134, 2, 170, 170, 190);
+    { unsigned sec = (unsigned)((SDL_GetTicks() - imp_t0) / 1000); snprintf(b, sizeof b, "%u:%02u", sec / 60, sec % 60); tf_text(r, b, 160, 160, 2, 120, 120, 140); }
+    tf_text(r, "THIS CAN TAKE A FEW MINUTES.", 160, 196, 1, 255, 255, 255);
+    tf_text(r, "IT ONLY HAPPENS ONCE. PLEASE KEEP", 160, 210, 1, 200, 200, 200);
+    tf_text(r, "THE POWER ON AND THE CARD IN.", 160, 224, 1, 200, 200, 200);
+#else
     tf_text(r, "IMPORTING", 160, 110, 4, 255, 224, 122);
     tf_text(r, "GAME DATA", 160, 150, 4, 255, 224, 122);
     SDL_SetRenderDrawColor(r, 200, 200, 210, 255); SDL_FRect o = { 40, 232, 240, 22 }; SDL_RenderRect(r, &o);
@@ -332,6 +354,7 @@ static void draw_import(SDL_Renderer *r) {                  /* 320x480 field coo
     tf_text(r, "THIS CAN TAKE A FEW MINUTES.", 160, 384, 1, 255, 255, 255);
     tf_text(r, "IT ONLY HAPPENS ONCE. PLEASE KEEP", 160, 398, 1, 200, 200, 200);
     tf_text(r, "THE POWER ON AND THE CARD IN.", 160, 412, 1, 200, 200, 200);
+#endif
 }
 #ifndef __ANDROID__
 static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet */

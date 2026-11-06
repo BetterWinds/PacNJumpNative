@@ -48,7 +48,9 @@ static pnj_gfx *pnj_gfx_open(void) {
     pnj_gfx *g = &pnj_gfx_one;
     gfxInitDefault();
     C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
-    C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
+    /* citro2d drops every draw past maxObjects in a frame (default 4096). The top screen is drawn twice with the 3D slider up, so the touch screen,
+       drawn last, was losing its text. */
+    if (!C2D_Init(16384)) C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
     C2D_Prepare();
     g->scr[0] = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
     g->scr[1] = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);

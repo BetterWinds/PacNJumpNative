@@ -10,6 +10,14 @@
 enum { IS_OPEN, IS_UNPACK, IS_SPRITES, IS_AUDIO, IS_WRITE, IS_DONE };
 static volatile int imp_pm = 0, imp_stage = IS_OPEN;
 static void imp_prog(int pm, int st) { imp_pm = pm; imp_stage = st; }
+/* Timing notes: on the 3DS each stage's start time goes to sdmc:/3ds/pacnjump/import_log.txt, so a slow import can be traced to a stage. */
+#ifdef PNJ_N3DS
+static void imp_mark(const char *what) { FILE *f = fopen("sdmc:/3ds/pacnjump/import_log.txt", "ab"); if (f) { fprintf(f, "%8u ms  %s\n", (unsigned)SDL_GetTicks(), what); fclose(f); } }
+#else
+#define imp_mark(w) ((void)0)
+#endif
+extern void (*pnj_aac_progress)(unsigned done, unsigned total);
+static void imp_aac_prog(unsigned done, unsigned total) { imp_prog(700 + (int)(100u * done / (total ? total : 1)), IS_AUDIO); }
 
 typedef struct { char name[160]; Uint32 method, csize, usize, lho; } zip_ent;
 typedef struct { unsigned char *d; size_t n; zip_ent *e; int ne; } zip_t;
@@ -147,7 +155,8 @@ unsigned char *pnj_native_decode(const char *path, size_t *out_size);      /* ji
 static void imp_jingle(const zip_t *z, const char *out_pack, imp_file **fl, int *nf, int *cap) {
     int k = zip_find(z, "res/raw/wakawaka.3gp"); if (k < 0) return;
     size_t sz; unsigned char *b = zip_read(z, k, &sz); if (!b) return;
-    { size_t an = 0; unsigned char *ad = pnj_aac_decode(b, sz, &an); if (ad) { imp_add(fl, nf, cap, "audio/wakawaka.wav", ad, an); free(b); return; } }
+    pnj_aac_progress = imp_aac_prog;
+    { size_t an = 0; unsigned char *ad = pnj_aac_decode(b, sz, &an); pnj_aac_progress = 0; if (ad) { imp_add(fl, nf, cap, "audio/wakawaka.wav", ad, an); free(b); return; } }
 #if defined(__ANDROID__) || defined(__IPHONEOS__)
     (void)out_pack; free(b);
 #else
@@ -180,11 +189,11 @@ static int import_apk(const char *apk, const char *out_pack, char *err, size_t e
     static const char *SFX[] = { "balloon", "bound", "cancel", "candle", "decide", "eat01", "eat02", "eat03", "eat04", "eat05", "eat06", "eat07", "eat08", "eat_enemy",
         "eat_item", "eat_pow", "gameover", "hat", "hiscore", "jump", "mappy_jump", "miss", "select", "st8_warning", 0 };
     zip_t z; imp_file *fl = 0; int nf = 0, cap = 0, ok = 0, nmaps = 0; err[0] = 0;
-    imp_prog(0, IS_OPEN);
+    imp_prog(0, IS_OPEN); imp_mark("import start: reading apk");
     if (!zip_open(&z, apk)) { snprintf(err, errn, "could not read %s as a zip/APK", apk); return 0; }
     if (zip_find(&z, "AndroidManifest.xml") < 0 || zip_find(&z, "res/drawable-hdpi/sysparts.png") < 0) { snprintf(err, errn, "this is not the Pac'N-Jump Android APK"); goto done; }
     char nm[200], out[260]; size_t sz;
-    imp_prog(40, IS_UNPACK);
+    imp_prog(40, IS_UNPACK); imp_mark("apk read, unpacking textures");
     for (int i = 0; TEX[i]; i++) {
         imp_prog(40 + 160 * i / 21, IS_UNPACK);
         snprintf(nm, sizeof nm, "res/drawable-hdpi/%s.png", TEX[i]); int k = zip_find(&z, nm);
@@ -210,13 +219,13 @@ static int import_apk(const char *apk, const char *out_pack, char *err, size_t e
         }
     }
     {
-        imp_prog(600, IS_SPRITES);
+        imp_prog(600, IS_SPRITES); imp_mark("reading sprite table");
         int k = zip_find(&z, "classes.dex"); size_t dn = 0; unsigned char *dx = k >= 0 ? zip_read(&z, k, &dn) : 0;
         size_t an = 0; char *at = dx ? dex_atlas(dx, dn, &an) : 0; free(dx);
         if (!at) { snprintf(err, errn, "could not read the sprite table from classes.dex (is this the 1.1.0 APK?)"); goto done; }
         imp_add(&fl, &nf, &cap, "meta/atlas.txt", (unsigned char *)at, an);
     }
-    imp_prog(700, IS_AUDIO);
+    imp_prog(700, IS_AUDIO); imp_mark("converting audio");
     imp_jingle(&z, out_pack, &fl, &nf, &cap);
     if (nmaps != 42) { snprintf(err, errn, "expected 42 level maps, found %d", nmaps); goto done; }
     for (int i = 0; SFX[i]; i++) {
@@ -230,7 +239,7 @@ static int import_apk(const char *apk, const char *out_pack, char *err, size_t e
     }
     qsort(fl, (size_t)nf, sizeof *fl, imp_cmp);
     {
-        imp_prog(800, IS_WRITE);
+        imp_prog(800, IS_WRITE); imp_mark("writing pack");
         char tmp[620]; snprintf(tmp, sizeof tmp, "%s.tmp", out_pack);
         FILE *f = fopen(tmp, "wb"); if (!f) { snprintf(err, errn, "cannot write %s", tmp); goto done; }
         fwrite("PNJPACK1", 1, 8, f); wr32(f, (Uint32)nf);
@@ -248,7 +257,7 @@ static int import_apk(const char *apk, const char *out_pack, char *err, size_t e
         remove(out_pack);
         if (rename(tmp, out_pack) != 0) { snprintf(err, errn, "could not move the pack into place"); goto done; }
     }
-    ok = 1; imp_prog(1000, IS_DONE);
+    ok = 1; imp_prog(1000, IS_DONE); imp_mark("done");
 done:
     for (int i = 0; i < nf; i++) free(fl[i].d);
     free(fl); zip_close(&z);

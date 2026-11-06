@@ -11,6 +11,7 @@
 #include "aac_tables.h"
 
 unsigned char *pnj_aac_decode(const unsigned char *file, size_t size, size_t *out_size);
+void (*pnj_aac_progress)(unsigned done, unsigned total) = 0;   /* optional: called every few frames while decoding */
 
 #define PI 3.14159265358979323846
 #ifdef AAC_TEST
@@ -447,6 +448,7 @@ unsigned char *pnj_aac_decode(const unsigned char *f, size_t size, size_t *out_s
     {
         short *pcm = (short *)(res + 44); float fr[2][1024];
         for (uint32_t i = 0; i < cnt; i++) {
+            if (pnj_aac_progress && (i & 31) == 0) pnj_aac_progress(i, cnt);
             if (off[i] + sz[i] > size) { free(res); res = 0; goto done; }
             if (!decode_frame(D, f + off[i], sz[i], fr) || D->sbr_seen) { free(res); res = 0; goto done; }
             for (int n = 0; n < 1024; n++) for (int c = 0; c < cc; c++) {
