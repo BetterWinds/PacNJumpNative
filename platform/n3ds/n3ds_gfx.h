@@ -95,15 +95,19 @@ static void pnj_line(pnj_gfx *g, float x0, float y0, float x1, float y1) {
 
 /* ---------- textures ----------
  * Made from a decoded RGBA image. The sheets in the pack are 1024x1024 at 2x the size they are drawn at, so they are halved on the way in
- * (alpha-weighted 2x2 average): a quarter of the memory, and the 3DS screen is only 400 wide anyway. The GPU wants 8x8 tiles in Morton order
- * with the bottom row first. */
-static inline u32 pnj_morton(u32 x, u32 y) { return (x & 1) | ((y & 1) << 1) | ((x & 2) << 1) | ((y & 2) << 2) | ((x & 4) << 2) | ((y & 4) << 3); }
+ * (alpha-weighted 2x2 average): a quarter of the memory, and the 3DS screen is only 400 wide anyway. The GPU wants its own tiled layout, so
+ * the pixels go into a plain linear buffer first and the console's own copy engine tiles and flips them into the texture. */
+#ifndef PNJ_N3DS_TEX_FLIP
+#define PNJ_N3DS_TEX_FLIP 1          /* the image's top row ends up at v = 1; set to 0 if every sprite comes out upside down */
+#endif
 static pnj_tex *pnj_tex_make(const unsigned char *px, int w, int h, int half, int sharp) {
     int dw = half ? w / 2 : w, dh = half ? h / 2 : h;
     if (dw < 8 || dh < 8 || (dw & (dw - 1)) || (dh & (dh - 1)) || dw > 1024 || dh > 1024) return NULL;     /* the GPU needs powers of two */
     pnj_tex *t = (pnj_tex *)calloc(1, sizeof *t); if (!t) return NULL;
     if (!C3D_TexInit(&t->tex, (u16)dw, (u16)dh, GPU_RGBA8)) { free(t); return NULL; }
-    u32 *dst = (u32 *)t->tex.data;
+    size_t bytes = (size_t)dw * dh * 4;
+    u32 *lin = (u32 *)linearAlloc(bytes);
+    if (!lin) { C3D_TexDelete(&t->tex); free(t); return NULL; }
     for (int y = 0; y < dh; y++) for (int x = 0; x < dw; x++) {
         unsigned r, g, b, a;
         if (half) {
@@ -113,9 +117,13 @@ static pnj_tex *pnj_tex_make(const unsigned char *px, int w, int h, int half, in
             if (sa) { r = sr / sa; g = sg / sa; b = sb / sa; } else r = g = b = 0;
             a = sa / 4;
         } else { const unsigned char *p = px + ((size_t)y * w + x) * 4; r = p[0]; g = p[1]; b = p[2]; a = p[3]; }
-        u32 yb = (u32)(dh - 1 - y);
-        dst[(((yb >> 3) * (u32)(dw >> 3) + ((u32)x >> 3)) << 6) + pnj_morton((u32)x & 7, yb & 7)] = (r << 24) | (g << 16) | (b << 8) | a;
+        lin[(size_t)y * dw + x] = (r << 24) | (g << 16) | (b << 8) | a;
     }
+    GSPGPU_FlushDataCache(lin, bytes);
+    C3D_SyncDisplayTransfer(lin, GX_BUFFER_DIM(dw, dh), (u32 *)t->tex.data, GX_BUFFER_DIM(dw, dh),
+        GX_TRANSFER_FLIP_VERT(PNJ_N3DS_TEX_FLIP) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
+        GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
+    linearFree(lin);
     C3D_TexFlush(&t->tex);
     C3D_TexSetFilter(&t->tex, sharp ? GPU_NEAREST : GPU_LINEAR, sharp ? GPU_NEAREST : GPU_LINEAR);
     C3D_TexSetWrap(&t->tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
