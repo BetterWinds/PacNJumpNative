@@ -226,7 +226,9 @@ static void pnj_push_finger(int type, float x, float y) {
     SDL_PushEvent(&e);
 }
 static void pnj_n3ds_pump(void) {
-    if (!aptMainLoop()) { SDL_Event q; SDL_zero(q); q.type = SDL_EVENT_QUIT; SDL_PushEvent(&q); return; }
+    if (!aptMainLoop()) {                                   /* Home menu "Close" or a power-off request: arm the watchdog straight away, whatever the rest of the shutdown does */
+        static int armed; if (!armed) { armed = 1; pnj_exit_log("close requested"); pnj_exit_watchdog(); }
+        SDL_Event q; SDL_zero(q); q.type = SDL_EVENT_QUIT; SDL_PushEvent(&q); return; }
     hidScanInput();
     static const struct { u32 k; int b; } map[] = {
         { KEY_DUP, SDL_GAMEPAD_BUTTON_DPAD_UP }, { KEY_DDOWN, SDL_GAMEPAD_BUTTON_DPAD_DOWN }, { KEY_DLEFT, SDL_GAMEPAD_BUTTON_DPAD_LEFT }, { KEY_DRIGHT, SDL_GAMEPAD_BUTTON_DPAD_RIGHT },
