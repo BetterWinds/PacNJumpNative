@@ -109,13 +109,15 @@ No art, sound, level data, sprite table or Help text. What is in the repo is the
 
 **Later, on the current platforms:** Windows code signing (see below), language select (the pack already carries every language file), tilt input (the original was tilt-controlled), foldable and two-screen Android phones, a 32-bit Android build.
 
+**Planned for every version:** true analog stick control. Today the stick is read as a digital direction (d-pad style) on the platforms that have one, and the on-screen pad has an analog-style mode that is a touch drag. The plan is to feed the stick's real deflection into the core's input model so a gentle push steers gently, on desktop gamepads, the Vita, the 3DS circle pad and anything else with a stick.
+
 **Ports in progress (branches, not in the release).** Each one merges into `main` after it passes on real hardware.
 
 | Platform | Branch | State |
 | --- | --- | --- |
 | PS Vita | `vita` | Runs in Vita3K, tate included. Real Vita test pending. |
-| Nintendo 3DS | `3ds` | Runs in Azahar, with sound. Stereo 3D is in and needs testing, and so does real hardware. |
-| Dreamcast | `dreamcast` | Boots in Flycast and plays from a CDI with your own pack. Loading times, tate and 60 fps are open. |
+| Nintendo 3DS | `3ds` | Plays on a New 3DS XL with sound and stereo 3D, imports your APK on the console, and builds a `.cia` for the Home menu. Open: closing the app from the Home menu, a layout pass on the smaller menus, old 3DS testing. |
+| Dreamcast | `dreamcast` | Plays from a CDI with your own pack in Flycast, with loading screens, 60 fps and tate. Open: scores and preferences on the VMU (written through deferred saves, still to be checked in an emulator with a VMU and on a real console), and a real hardware test. |
 
 **Future platforms.** Nothing here is started. Roughly easiest first.
 
