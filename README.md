@@ -105,9 +105,9 @@ No art, sound, level data, sprite table or Help text. What is in the repo is the
 
 ## Roadmap
 
-**Now: a public release.** Windows, macOS, Linux and Android are the supported builds. The work left is testing on real hardware (Linux, macOS HDR, handhelds), Windows code signing through the SignPath Foundation, and release notes. No new platforms until that is out.
+**Now: a public release.** Windows, macOS, Linux and Android are the supported builds. The work left is testing on real hardware (Linux, macOS HDR, handhelds) and release notes. No new platforms until that is out.
 
-**Later, on the current platforms:** language select (the pack already carries every language file), tilt input (the original was tilt-controlled), foldable and two-screen Android phones, a 32-bit Android build.
+**Later, on the current platforms:** Windows code signing (see below), language select (the pack already carries every language file), tilt input (the original was tilt-controlled), foldable and two-screen Android phones, a 32-bit Android build.
 
 **Ports in progress (branches, not in the release).** Each one merges into `main` after it passes on real hardware.
 
@@ -132,12 +132,9 @@ No art, sound, level data, sprite table or Help text. What is in the repo is the
 
 The small and old targets share two prerequisites: a per-target mode in `tools/make_pack.py` that scales, palettizes and re-encodes art and audio, and a float or fixed-point build of the core with a replay test that proves it plays the same run as the double build. There is no route to PS5, since there is no public homebrew SDK.
 
-## Code signing policy
+## Code signing
 
-The Windows exe is built from this repo by GitHub Actions (`.github/workflows/desktop.yml`) and is meant to be signed through the SignPath Foundation's free program for open source projects. Releases up to now are not signed.
-
-- Authors, reviewers and approvers: Jon Anderson ([@heyjonanderson](https://github.com/heyjonanderson)), who owns the repo and signs off on every release before it is signed.
-- Only artifacts built from this repo's source are signed.
+The Windows exe is built from this repo by GitHub Actions (`.github/workflows/desktop.yml`) and is not signed. Windows SmartScreen or Defender may warn about it the first time you run it. Choose More info, then Run anyway. We would like to get it signed once the project has some traction. The macOS app is ad-hoc signed only, so see the first launch steps above.
 
 Privacy: this program will not transfer any information to other networked systems unless specifically requested by the user.
 
