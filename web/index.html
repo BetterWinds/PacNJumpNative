@@ -12,6 +12,8 @@
   main { max-width:640px; margin:0 auto; padding:32px 16px 64px; }
   h1 { font-size:26px; margin:0 0 8px; }
   h2 { font-size:17px; margin:32px 0 8px; }
+  h3 { font-size:15px; margin:20px 0 4px; }
+  code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; }
   p { margin:8px 0; color:var(--dim); }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin-top:20px; }
   #drop { border:2px dashed var(--line); border-radius:12px; padding:36px 16px; text-align:center; cursor:pointer; color:var(--dim); }
@@ -48,11 +50,22 @@
   </div>
 
   <h2>Installing it</h2>
+  <p>Needs a 64-bit Android phone running Android 7.0 or newer. Pick one of the two ways below.</p>
+
+  <h3>Option 1: build and install on the phone</h3>
   <ol>
-    <li>Needs a 64-bit Android phone running Android 7.0 or newer.</li>
-    <li>Download the APK on the phone (or copy it over). Open it from your Files app or the browser's download list.</li>
+    <li>Open this page on the phone and choose your original APK. It builds the app in the browser.</li>
+    <li>Tap Download, then open the finished APK from your Files app or the browser's download list.</li>
     <li>Android will ask you to allow installs from that app (Files, Chrome, whichever opened it). Turn that on for it once.</li>
     <li>If Play Protect warns about an app it hasn't seen, tap More details, then Install anyway.</li>
+  </ol>
+
+  <h3>Option 2: build on a computer and copy it over</h3>
+  <ol>
+    <li>Build the APK on the computer and download <code>PacNJump.apk</code>.</li>
+    <li>Plug the phone in with a USB cable, set it to File Transfer, and copy the APK into the phone's Downloads folder. Sending it to yourself by email or a cloud drive works too.</li>
+    <li>On the phone, open Files, go to Downloads and tap the APK.</li>
+    <li>Allow installs from Files when Android asks, and tap Install anyway if Play Protect warns about it.</li>
   </ol>
   <details class="small"><summary>Notes</summary>
     <p>The app is signed with a key this page creates and keeps in your browser. Building again in the same browser gives an APK that updates the installed one. A different browser makes a different key, so uninstall the old copy first.</p>
