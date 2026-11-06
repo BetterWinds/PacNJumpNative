@@ -166,7 +166,7 @@ static void digits_right(SDL_Renderer *r, int v, double xr, double ytop) {
 
 /* ---------- hit regions (rebuilt every frame) ---------- */
 enum { H_NONE, H_TITLE, H_PLAY, H_RECORD, H_OPTION, H_BACK, H_PREV, H_NEXT, H_START, H_SFXT, H_MUST, H_SFXS, H_MUSS, H_CTRL, H_SNAP,
-       H_P_OPTION, H_P_EXIT, H_P_RESUME, H_OVER, H_HELP, H_ACH, H_P_HELP, H_QUIT, H_P_QUIT, H_ORIENT, H_KEYS, H_RESET, H_MATCH, H_TOUCHUI, H_SCALE, H_HDR, H_O_SND, H_O_VID, H_O_CTL, H_FS, H_KEY0 };   /* H_KEY0 + row * 3 + slot: a binding box */
+       H_P_OPTION, H_P_EXIT, H_P_RESUME, H_OVER, H_HELP, H_ACH, H_P_HELP, H_QUIT, H_P_QUIT, H_ORIENT, H_KEYS, H_RESET, H_MATCH, H_TOUCHUI, H_SCALE, H_HDR, H_O_SND, H_O_VID, H_O_CTL, H_FS, H_ABSWAP, H_KEY0 };   /* H_KEY0 + row * 3 + slot: a binding box */
 #if !defined(__ANDROID__) && !defined(__IPHONEOS__) && !defined(__vita__) && !defined(PNJ_N3DS)
 #define PNJ_HAS_QUIT 1      /* desktop only: phones and consoles quit through the system */
 #define PNJ_DESKTOP 1
@@ -456,6 +456,9 @@ static void draw_menu(SDL_Renderer *r) {
 #if defined(PNJ_DESKTOP) || defined(PNJ_VITA)
         btn(r, "KEYS", 60, 340, 200, 44, H_KEYS, menu_fill(H_KEYS, 0xb4b4d2), 13, 0);
 #endif
+#ifdef PNJ_N3DS
+        btn(r, SV.pad[ACT_OK] == SDL_GAMEPAD_BUTTON_EAST ? "B: OK  A: BACK" : "A: OK  B: BACK", 60, 340, 200, 44, H_ABSWAP, menu_fill(H_ABSWAP, 0xb4b4d2), 11, 0);
+#endif
         backbtn(r);
         break; }
     case UI_KEYS: {
@@ -552,6 +555,7 @@ static void ui_touch(double lx, double ly) {
         case H_P_HELP: audio_play(A_DECIDE); help_back = UI_PLAY; help_page = 0; ui_enter(UI_HELP); break;
         case H_ORIENT: audio_play(A_SELECT); SV.orient = (SV.orient + 1) % 3; orient_dirty = 1; save_write(); break;
         case H_KEYS: audio_play(A_DECIDE); ui_enter(UI_KEYS); break;
+        case H_ABSWAP: { int t = SV.pad[ACT_OK]; SV.pad[ACT_OK] = SV.pad[ACT_BACK]; SV.pad[ACT_BACK] = t; audio_play(A_SELECT); save_write(); break; }       /* A and B trade jobs (3DS) */
         case H_O_SND: audio_play(A_DECIDE); ui_enter(UI_OPT_SOUND); break;
         case H_O_VID: audio_play(A_DECIDE); ui_enter(UI_OPT_VIDEO); break;
         case H_O_CTL: audio_play(A_DECIDE); ui_enter(UI_OPT_CTRL); break;

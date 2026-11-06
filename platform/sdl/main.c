@@ -468,13 +468,31 @@ static void draw_current(SDL_Renderer *rr) {
     hdr_gain = 1.0f;
     if (ui_mode == UI_PLAY) render(rr); else draw_menu(rr);
 }
+/* Menu mode: a menu, the pause overlay or game over is up. The menu goes on the touch screen only, at half size; the top screen keeps the scene. */
+static int n3ds_menu_mode(void) { return !IJ.busy && !need_data && (ui_mode != UI_PLAY || paused); }
+static void draw_top_menu(SDL_Renderer *rr) {
+    int scene = ui_mode == UI_PLAY || ui_mode == UI_OVER || (is_opt(ui_mode) && opt_back == UI_PLAY) || (ui_mode == UI_HELP && help_back == UI_PLAY);
+    if (scene) { pnj_top_pass = 1; render(rr); pnj_top_pass = 0; return; }       /* the (paused) game, without the overlay */
+    G.stage = sel_stage; G.L = ui_L; G.cam594 = (fx)(-ui_L * 4); G.peak = 0; G.p.power = 0;
+    SDL_SetRenderDrawColor(rr, 0, 0, 0, 255); SDL_RenderClear(rr);
+    draw_bg(rr);
+    if (ui_mode == UI_TITLE || ui_mode == UI_MENU) draw_logo(rr, 0, 1);
+}
 static void present_frame(SDL_Renderer *rr) {
     pnj_gfx_begin(rr);
-    for (int s = 0; s < 2; s++) { pnj_gfx_screen(rr, s); draw_current(rr); }     /* the same field twice: top shows rows 0-239, the touch screen 240-479 */
+    int menu = n3ds_menu_mode();
+    for (int s = 0; s < 2; s++) {
+        pnj_gfx_screen(rr, s, menu);
+        if (menu && s == 0) draw_top_menu(rr); else draw_current(rr);        /* playing: the same field twice, top rows 0-239, touch screen 240-479 */
+    }
     pnj_gfx_end(rr);
 }
 static void mouse_field(SDL_Window *w, SDL_Renderer *rr, float x, float y, float *lx, float *ly) { (void)w; (void)rr; *lx = x; *ly = y; }
-static void finger_field(SDL_Window *w, SDL_Renderer *rr, float nx, float ny, float *lx, float *ly) { (void)w; (void)rr; *lx = nx * PNJ_W; *ly = ny * PNJ_H; }
+static void finger_field(SDL_Window *w, SDL_Renderer *rr, float nx, float ny, float *lx, float *ly) {      /* nx, ny: 0..1 over the touch screen */
+    (void)w; (void)rr; float px = nx * 320.0f, py = ny * 240.0f;
+    if (n3ds_menu_mode()) { *lx = (px - 80.0f) * 2.0f; *ly = py * 2.0f; }           /* the menu sits at half size, centred on the touch screen */
+    else { *lx = px; *ly = 240.0f + py; }                                           /* playing: the touch screen is the lower half of the field */
+}
 #endif
 
 /* ---------- remappable keys and pad ---------- */
@@ -523,7 +541,11 @@ static void render(SDL_Renderer *r) {
             d->r / 255.0, d->g / 255.0, d->b / 255.0);
     }
     draw_hud(r);
-    if (paused && ui_mode == UI_PLAY) { if (touch_ui_on()) SPR(r, 65, 160, 19); draw_pause(r); }   /* Options and Help opened from the pause menu draw over the bare scene */
+#ifdef PNJ_N3DS
+    if (paused && ui_mode == UI_PLAY && !pnj_top_pass) { if (touch_ui_on()) SPR(r, 65, 160, 19); draw_pause(r); }
+#else
+    if (paused && ui_mode == UI_PLAY) { if (touch_ui_on()) SPR(r, 65, 160, 19); draw_pause(r); }
+#endif   /* Options and Help opened from the pause menu draw over the bare scene */
     draw_hits(r);
 }
 
