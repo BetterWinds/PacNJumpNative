@@ -154,7 +154,9 @@ static void pnj_draw_tex(pnj_gfx *g, pnj_tex *t, const SDL_FRect *src, const SDL
     if (t->add) { int m = t->cr > t->cg ? t->cr : t->cg; if (t->cb > m) m = t->cb; a *= m / 255.0f; if (a > 1.0f) a = 1.0f; }
     C2D_ImageTint tint; C2D_AlphaImageTint(&tint, a);
     C2D_DrawParams p;
-    p.pos.x = dst->x * g->sc + g->ox; p.pos.y = dst->y * g->sc + g->oy; p.pos.w = dst->w * g->sc; p.pos.h = dst->h * g->sc;
+    /* citro2d puts the centre point at pos, not the top-left corner, so pos is the middle of the destination (spin about that point) */
+    p.pos.w = dst->w * g->sc; p.pos.h = dst->h * g->sc;
+    p.pos.x = dst->x * g->sc + g->ox + p.pos.w * 0.5f; p.pos.y = dst->y * g->sc + g->oy + p.pos.h * 0.5f;
     p.center.x = p.pos.w * 0.5f; p.center.y = p.pos.h * 0.5f;
     p.depth = 0.0f; p.angle = (float)(angle * 3.14159265358979 / 180.0) * PNJ_N3DS_ROT_SIGN;
     C2D_DrawImage(img, &p, &tint);
