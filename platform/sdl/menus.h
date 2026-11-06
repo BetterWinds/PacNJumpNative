@@ -15,7 +15,8 @@ typedef struct { uint32_t magic; int sfx_on, mus_on; float sfx_vol, mus_vol; int
                  int pad[ACT_N];             /* SDL controller buttons, -1 = none */
                  int touchui;                /* on-screen touch controls: 0 auto (follow the last input device), 1 always, 2 never */
                  int intscale;               /* 0 smooth scaling, 1 whole-number scale with sharp pixels (desktop) */
-                 int hdr;                    /* 0 SDR output, 1 ask for HDR output (desktop; only does anything on an HDR display) */ } save_t;
+                 int hdr;                    /* 0 SDR output, 1 ask for HDR output (desktop; only does anything on an HDR display) */
+                 int ver;                    /* settings revision: 1 = the 3DS defaults to the analog touch pad */ } save_t;
 static save_t SV;
 
 /* The last kind of input the player used. It picks the prompt wording ("TOUCH SCREEN" or "PRESS ANYTHING") and, in AUTO, whether the
@@ -115,6 +116,9 @@ static void save_load(void) {
     FILE *f = save_path[0] ? fopen(save_path, "rb") : NULL;
     if (f) { save_t t = SV; size_t n = fread(&t, 1, sizeof t, f);                                  /* a shorter (older) file leaves the new fields at their defaults */
              if (n >= offsetof(save_t, orient) && t.magic == 0x504e4a31) { SV = t; if (SV.orient < 0 || SV.orient > 2) SV.orient = 0; } fclose(f); }
+#ifdef PNJ_N3DS
+    if (SV.ver < 1) { SV.analog = 1; SV.ver = 1; }                                                 /* a stylus drag suits the 3DS better than the split digital pad */
+#endif
     save_apply();
 }
 
@@ -139,7 +143,10 @@ static void ftext(SDL_Renderer *r, const char *t, double x, double y, double siz
     SDL_Texture *tx = get_tex(r, 2); if (!tx) return;
     double k = (double)TEXW[2] / 512.0, cell = size * 1.15, adv = cell * 0.7, w = strlen(t) * adv;
 #ifdef PNJ_N3DS
-    if (FONTLITE && r->sc < 0.75f) { tx = FONTLITE; k = 0.5; }       /* half-size menus use the pre-shrunk font */
+    if (FONTLITE && r->sc < 0.75f) {                                  /* half-size menus use a pre-shrunk font: pick the level closest to the drawn cell size */
+        double dc = cell * r->sc;
+        if (FONTLITE8 && dc < 11.3) { tx = FONTLITE8; k = 0.25; } else if (dc < 22.6) { tx = FONTLITE; k = 0.5; }
+    }
 #endif
     double px = align == 1 ? x : align == 2 ? x - w : x - w / 2, py = y - cell * 0.78;
     SDL_SetTextureBlendMode(tx, SDL_BLENDMODE_BLEND);

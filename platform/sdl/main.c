@@ -39,7 +39,7 @@ static int touch_dir = 0;       /* digital touch: -1 left half, +1 right half */
 /* ---------- assets ---------- */
 static SDL_Texture *TEX[PNJ_NTEX];
 #ifdef PNJ_N3DS
-static SDL_Texture *FONTLITE;
+static SDL_Texture *FONTLITE, *FONTLITE8;
 #endif
 /* HDR output (desktop). The renderer is made with a linear output colorspace when the HDR option is on. SDL then scales ordinary (SDR) drawing to
  * the display's SDR white level by itself, so the picture looks the same as before, and colors above 1.0 are free to go brighter than white.
@@ -96,7 +96,7 @@ static SDL_Texture *get_tex(SDL_Renderer *r, int i) {
     SDL_Texture *t = pnj_tex_make(px, w, h, half ? 2 : 1, 0); if (t) w = t->w;
     if (i == 2 && !FONTLITE && w == 512) {                  /* menus are drawn at half size: a pre-shrunk copy of the dotted font (16 px cells) stays readable */
         size_t rowb = (size_t)1024 * 4; unsigned char *fl = (unsigned char *)calloc(512, rowb);
-        if (fl && h >= 384) { memcpy(fl, px, (size_t)384 * rowb); FONTLITE = pnj_tex_make(fl, 1024, 512, 4, 0); }
+        if (fl && h >= 384) { memcpy(fl, px, (size_t)384 * rowb); FONTLITE = pnj_tex_make(fl, 1024, 512, 4, 0); FONTLITE8 = pnj_tex_make(fl, 1024, 512, 8, 0); }
         free(fl);
     }
     (void)r;
@@ -485,7 +485,7 @@ static void draw_current(SDL_Renderer *rr) {
 static int n3ds_menu_mode(void) { return !IJ.busy && !need_data && (ui_mode != UI_PLAY || paused); }
 static void draw_top_menu(SDL_Renderer *rr) {
     int scene = ui_mode == UI_PLAY || ui_mode == UI_OVER || (is_opt(ui_mode) && opt_back == UI_PLAY) || (ui_mode == UI_HELP && help_back == UI_PLAY);
-    if (scene) { pnj_top_pass = 1; render(rr); pnj_top_pass = 0; return; }       /* the (paused) game, without the overlay */
+    if (scene) { int kid = kb_id; pnj_top_pass = 1; render(rr); pnj_top_pass = 0; kb_id = kid; return; }   /* render() refreshes the focus against an empty hit list, which would wipe the touch screen's highlight */       /* the (paused) game, without the overlay */
     G.stage = sel_stage; G.L = ui_L; G.cam594 = (fx)(-ui_L * 4); G.peak = 0; G.p.power = 0;
     SDL_SetRenderDrawColor(rr, 0, 0, 0, 255); SDL_RenderClear(rr);
     draw_bg(rr);
