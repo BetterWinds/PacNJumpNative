@@ -12,6 +12,8 @@ A port of Pac'N-Jump (Namco, 2011), a mobile game that was pulled from the store
 
 **Android, import on the phone:** `android\package.bat byo` builds an APK with no game data in it. Install it and pick the original APK on first launch.
 
+**Dreamcast (work in progress):** open `dreamcast.html` on the same page, drop your original APK and download `PacNJump.cdi`. It takes a minute or two and nothing is uploaded. Run it in Flycast, from a disc emulator, or burn it as an Audio/Data (MIL-CD style) image. It has been tested on a real console, not yet on a burned disc. The page needs the disc template that the Dreamcast build makes, so it only works once that build has run.
+
 **From source:** see Building below.
 
 ### macOS first launch
@@ -47,6 +49,14 @@ v2 signing means Android 7.0 and up. `web/test_builder.mjs` runs the same code i
 
 `.github/workflows/pages.yml` builds the template on GitHub, checks it has no game data in it, and publishes `web/` to GitHub Pages on each push to main (Settings > Pages > Source: GitHub Actions). You do not build or commit the template by hand. Any static host works. The page fetches `template.apk` from its own folder.
 
+The power-up jingle is AAC. The builder asks the browser to decode it and falls back to `web/aac.wasm`, the importer's own decoder (`platform/sdl/aac_dec.c`) built with `tools/aac_wasm/build.sh`, for browsers that cannot. The output is the same either way.
+
+### The Dreamcast builder
+
+`web/dreamcast.html` builds the pack the same way, then `web/dc_pack.js` turns it into a Dreamcast pack (sprite sheets become VQ-compressed textures, with the work spread over `web/dc_worker.js` workers). `web/dc_disc.js` then writes that pack into a ready-made disc image and recomputes the EDC and ECC for every sector it touches, so the result is the same disc `mkdcdisc` would have made.
+
+The ready-made image (`pacnjump-dc.cdi` and its `.json`) comes from the Dreamcast workflow on the `dreamcast` branch. `pages.yml` copies the latest one into `web/dc/` when it deploys. `web/test_dcpack.mjs` and `web/test_dcdisc.mjs` check the JavaScript against the C tool and against `mkdcdisc`.
+
 ## Building
 
 Desktop:
@@ -71,8 +81,8 @@ core/            portable C99 game core: physics, camera, generator, RNG, draw l
 platform/sdl/    SDL3 shell: main.c (render, input), menus.h, audio.h, pack.h (finds and reads pnj.pack),
                  import.h (APK to pack), aac_dec.c (jingle decoder), atlas.h
 android/         Android Studio project (SDL Java glue, CMake into ../core, file picker activity)
-web/             the browser APK builder: builder.js (APK to pack to signed APK, client side), index.html
-tools/           make_pack.py, dexatlas.py, gen_maps.py, parity scripts
+web/             the browser builders: builder.js (APK to pack to signed APK, client side), index.html, dreamcast.html, dc_pack.js, dc_disc.js, aac.wasm
+tools/           make_pack.py, dexatlas.py, gen_maps.py, parity scripts, aac_wasm/ (builds web/aac.wasm)
 third_party/     SDL (submodule), stb (image and vorbis, public domain)
 ```
 
@@ -116,7 +126,7 @@ No art, sound, level data, sprite table or Help text. What is in the repo is the
 | Platform | Branch | State |
 | --- | --- | --- |
 | PS Vita | `vita` | Runs in Vita3K, tate included. Real Vita test pending. |
-| Nintendo 3DS | `3ds` | Plays on a New 3DS XL with sound and stereo 3D, imports your APK on the console, and builds a `.cia` for the Home menu. Open: an icon that matches the Android app's (the repo can't hold that art, so it would have to come from the player's own APK or be a close redraw), old 3DS testing. |
+| Nintendo 3DS | `3ds` | Plays on a New 3DS XL with sound and stereo 3D, uses both screens for menus and the import, imports your APK on the console, closes cleanly, and builds a `.cia` for the Home menu. Open: an icon that matches the Android app's (the repo can't hold that art, so it would have to come from the player's own APK or be a close redraw), old 3DS testing. |
 | Dreamcast | `dreamcast` | Builds one CDI from your APK in the browser. Works on a real console in progressive and interlaced video on CRTs, with sound, loading screens, 60 fps and tate. Scores and preferences save to the VMU (about 1 block). Open: PAL support. The game steps at 60 per second, so a 50 Hz console needs a timing change that keeps the game speed the same. Burned discs are untested. |
 
 **Future platforms.** Nothing here is started. Roughly easiest first.
