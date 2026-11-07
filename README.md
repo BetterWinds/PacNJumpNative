@@ -4,6 +4,41 @@ A fan port of Pac'N-Jump, Namco's 2011 phone game that has since been pulled fro
 
 **You bring your own copy of the game.** This project has none of Namco's art, sound or levels in it. The first time you run it, it builds what it needs from the original Android APK file. That happens on your own device or in your own browser, and your APK is never uploaded anywhere.
 
+## Features
+
+**On every platform**
+- All 8 stages and 42 level maps, with the original's rules (checked step for step against its game logic).
+- Stage select, high scores, achievements, Help pages and a pause menu.
+- Sound effects and music, each with its own on/off switch and volume slider, and the power-up jingle when you grab a power pellet.
+- Scores and settings are saved.
+- Tate mode (Windows, macOS, Linux, Vita and Dreamcast): turn the picture 90 degrees and play with the screen on its side, as you would an arcade cabinet.
+- It makes no network connections.
+
+**Windows, macOS and Linux**
+- Keyboard, mouse, touch screen or game controller, with remappable keys.
+- Fullscreen, a resizable window that keeps the game's portrait shape, and smooth or sharp whole-number scaling.
+- HDR output.
+- Three screen rotations for tate, plus a one-button remap so the arrows follow the turned picture.
+- Optional on-screen pad and pause button, shown automatically when you use touch or the mouse.
+
+**Android**
+- Touch controls with an analog-style slide pad or a digital pad.
+
+**PS Vita**
+- Tate mode, with the d-pad turning along with the console.
+- The d-pad and both sticks steer, and buttons can be remapped.
+- The touch screen works for the menus and the on-screen pad.
+
+**Nintendo 3DS**
+- Stereo 3D that follows the 3D slider.
+- Menus and the pause screen use the bottom touch screen at full size.
+- Circle pad, d-pad or touch steering, with an A/B button swap.
+
+**Sega Dreamcast**
+- 60 fps, in progressive or interlaced video.
+- Scores and settings save to the VMU, in about 1 block.
+- Loading screens between stages, and the d-pad or stick steers.
+
 ## Get started
 
 1. [Get the original APK](#1-get-the-original-apk).
