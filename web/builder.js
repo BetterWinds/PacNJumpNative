@@ -140,6 +140,24 @@ async function decodeJingle(bytes) {
   return l.length > 4410 ? wavFromChannels(l, r, buf.sampleRate) : null;
 }
 
+// Fallback for browsers with no AAC decoder: platform/sdl/aac_dec.c (the importer's own decoder) built to WebAssembly by tools/aac_wasm/build.sh.
+// It gives the same WAV the desktop importer makes (the source's own rate, 32 kHz stereo for this file).
+let aacWasm = null;
+async function decodeJingleWasm(bytes) {
+  if (!aacWasm) {
+    const u = new URL('./aac.wasm', import.meta.url);
+    const src = u.protocol === 'file:' ? await (await import('node:fs/promises')).readFile(u) : await (await fetch(u)).arrayBuffer();
+    aacWasm = (await WebAssembly.instantiate(src, { env: { sin: Math.sin, cos: Math.cos, pow: Math.pow } })).instance.exports;
+  }
+  const x = aacWasm, p = x.alloc(bytes.length);
+  new Uint8Array(x.memory.buffer, p, bytes.length).set(bytes);
+  return x.decode(p, bytes.length) ? new Uint8Array(x.memory.buffer, x.out_ptr(), x.out_len()).slice() : null;
+}
+async function jingle(bytes) {
+  try { const w = await decodeJingle(bytes); if (w) return w; } catch (e) { /* no AAC in this browser */ }
+  try { return await decodeJingleWasm(bytes); } catch (e) { return null; }
+}
+
 export async function buildPack(apk, log = () => {}) {
   let z;
   try { z = parseZip(apk); } catch (e) { throw new Error('That file is not an APK (a zip file).'); }
@@ -171,8 +189,8 @@ export async function buildPack(apk, log = () => {}) {
   }
   const ww = byName.get('res/raw/wakawaka.3gp');
   if (ww) {
-    try { const wav = await decodeJingle(await readEntry(z, ww)); if (wav) files.set('audio/wakawaka.wav', wav); else log('Power-up jingle skipped (this browser cannot decode it)'); }
-    catch (e) { log('Power-up jingle skipped (this browser cannot decode it)'); }
+    const wav = await jingle(await readEntry(z, ww));
+    if (wav) files.set('audio/wakawaka.wav', wav); else log('Power-up jingle skipped (could not decode it)');
   }
   { const dx = byName.get('classes.dex'); if (!dx) throw new Error('Missing classes.dex'); files.set('meta/atlas.txt', dexAtlas(await readEntry(z, dx))); }
   if (maps !== MAP_COUNT) throw new Error(`Expected ${MAP_COUNT} level maps, found ${maps}.`);
