@@ -3,7 +3,7 @@
 name: Desktop
 on:
   push:
-    branches: [main, sdl3]
+    branches: [main, sdl3, dreamcast]
     paths-ignore: ['web/**', 'android/**', '*.md']
     tags: ['v*']
   pull_request:

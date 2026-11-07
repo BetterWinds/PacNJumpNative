@@ -1,0 +1,31 @@
+# Builds the Sega Dreamcast port with the official KallistiOS toolchain image. No game data goes in the build.
+name: Dreamcast
+on:
+  push:
+    branches: ['dreamcast']
+    paths-ignore: ['web/**', 'android/**', '*.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  KOS_COMMIT: d81aa3fda0520b6ca64098ce9d1d43e7562142d9      # KallistiOS master, 27 Oct 2026; the headers in platform/dc were written against it
+jobs:
+  dc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Version
+        run: |
+          echo "PNJ_VERSION=b${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_ENV"
+      - name: Build (KallistiOS toolchain image)
+        run: |
+          mkdir -p out
+          docker run --rm -v "$PWD:/work" -e KOS_COMMIT -e PNJ_VERSION pcercuei/dreamcast-toolchain:stable sh /work/tools/ci/dc_build.sh
+      - name: Disc tool log
+        if: always()
+        run: cat out/disc-log.txt || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pacnjump-dc-${{ env.PNJ_VERSION }}
+          path: out/

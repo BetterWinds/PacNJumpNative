@@ -9,8 +9,15 @@
  *   tap the pause button (top centre) to pause/resume
  *   desktop: arrows/A/D, mouse drag = analog, R restart, P pause, Esc quit
  */
+#ifdef PNJ_DC
+#include "../dc/dc_sdl.h"            /* KallistiOS has no SDL3: a small stand-in for the calls used here, and the PVR drawing layer */
+#else
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#endif
+#ifdef PNJ_DC
+#define PNJ_NOIMPORT 1               /* no APK import on the console: the web builder makes the pack */
+#endif
 #ifdef PNJ_N3DS
 #include "../n3ds/n3ds_gfx.h"        /* swaps SDL's window and renderer calls for citro2d; see that file */
 #include <opendsp.h>                 /* open DSP firmware: ndsp works without a dumped dspfirm.cdc */
@@ -54,7 +61,9 @@ static int TEXW[PNJ_NTEX];
 
 static void data_loaded(void);                          /* atlas and help text come from the pack; see below */
 #include "pack.h"
+#ifndef PNJ_NOIMPORT
 #include "import.h"
+#endif
 static int no_bundle = 0;      /* PNJ_NO_BUNDLE=1: ignore loose/bundled files and use only the pack (testing the bring-your-own-APK path) */
 static unsigned char *read_asset(const char *name, size_t *size) {
     if (PKN) {                                              /* the pack wins when present */
@@ -88,15 +97,38 @@ static unsigned char *read_asset(const char *name, size_t *size) {
 static SDL_Texture *get_tex(SDL_Renderer *r, int i) {
     if (TEX[i]) return TEX[i];
     if (TEXW[i] < 0) return 0;                              /* failed before */
+#ifdef PNJ_DC
+    if (PKN) {                                              /* the pack's ready-made console texture: copy it into video memory, nothing to decode */
+        char dn[96]; size_t dsz = 0; snprintf(dn, sizeof dn, "dc/%s.dtx", PNJ_TEXTURES[i]);
+        unsigned char *d = pack_read(dn, &dsz);
+        if (d && dsz >= 8 && (!memcmp(d, "DTX1", 4) || !memcmp(d, "DTX2", 4))) {
+            int vq = d[3] == '2', dw = d[4] | (d[5] << 8), dh = d[6] | (d[7] << 8); SDL_Texture *t = NULL;
+            size_t need = vq ? 8 + 2048 + (size_t)(dw / 2) * (dh / 2) : 8 + (size_t)dw * dh * 2;
+            if (dsz >= need) {
+                for (;;) {
+                    t = vq ? pnj_tex_from_vq(d + 8, dw, dh, 0) : pnj_tex_from_4444((const uint16_t *)(d + 8), dw, dh, 0);
+                    if (t || !dc_evict_lru(TEX, TEXW, PNJ_NTEX)) break;
+                }
+            }
+            free(d);
+            if (t) { TEX[i] = t; TEXW[i] = t->w; return t; }
+        } else free(d);
+    }
+#endif
     char name[64]; snprintf(name, sizeof name, "%s.png", PNJ_TEXTURES[i]);
     size_t n; unsigned char *buf = read_asset(name, &n);
     int w = 0, h = 0, c = 0;
     unsigned char *px = buf ? stbi_load_from_memory(buf, (int)n, &w, &h, &c, 4) : 0;
     free(buf);
     if (!px) { TEXW[i] = -1; SDL_Log("missing texture %s", name); return 0; }
-#ifdef PNJ_N3DS
+#if defined(PNJ_N3DS) || defined(PNJ_DC)
     int half = w >= 512;                                    /* the sheets are drawn at half their size; see n3ds_gfx.h */
-    SDL_Texture *t = pnj_tex_make(px, w, h, half ? 2 : 1, 0); if (t) w = t->w;
+    SDL_Texture *t = pnj_tex_make(px, w, h, half ? 2 : 1, 0);
+#ifdef PNJ_DC
+    while (!t && dc_evict_lru(TEX, TEXW, PNJ_NTEX)) t = pnj_tex_make(px, w, h, half ? 2 : 1, 0);      /* video memory full: drop the sheet drawn longest ago */
+#endif
+    if (t) w = t->w;
+#ifdef PNJ_N3DS
     if (i == 2 && !FONTLITE && w == 512) {                  /* menus are drawn at half size: a pre-shrunk copy of the dotted font (16 px cells) stays readable */
         size_t rowb = (size_t)1024 * 4; unsigned char *fl = (unsigned char *)calloc(512, rowb);
         /* The shrunk copies sit in the corner of a full 512 x 512 texture: on a real console the small textures (256 x 128, 128 x 64) came out scrambled while
@@ -105,6 +137,7 @@ static SDL_Texture *get_tex(SDL_Renderer *r, int i) {
         if (fl && h >= 384 && !skip) { memcpy(fl, px, (size_t)384 * rowb); FONTLITE = pnj_tex_make_pad(fl, 1024, 512, 4, 0, 512, 512); FONTLITE8 = pnj_tex_make_pad(fl, 1024, 512, 8, 0, 512, 512); }
         free(fl);
     }
+#endif
     (void)r;
 #else
     SDL_Texture *t = SDL_CreateTexture(r, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, w, h);
@@ -208,6 +241,7 @@ static void reset_assets(void) {                      /* after a new pack arrive
     if (aud_dev) { mus_want[0] = 0; audio_music_flush(); audio_load_all(); }
 }
 static int data_present(void) { size_t n; unsigned char *b = read_asset("sysparts.png", &n); free(b); return b != NULL; }
+#ifndef PNJ_NOIMPORT
 static int do_import(const char *apk, const char *outpath) {
     char out[620]; char err[240];
     if (outpath) snprintf(out, sizeof out, "%s", outpath);
@@ -218,6 +252,7 @@ static int do_import(const char *apk, const char *outpath) {
     snprintf(imp_msg, sizeof imp_msg, "Imported %d files from your APK.", PKN);
     return 1;
 }
+#endif
 static int ends_apk(const char *s) { size_t l = strlen(s); return l > 4 && !SDL_strcasecmp(s + l - 4, ".apk"); }
 #if defined(__ANDROID__) || defined(__vita__) || defined(PNJ_N3DS)
 #include <dirent.h>
@@ -244,7 +279,7 @@ static void scan_for_apk(void) {                      /* Android and Vita: pick 
 #define PNJ_VERSION "dev"
 #endif
 #ifndef __ANDROID__
-#if !defined(__vita__) && !defined(PNJ_N3DS)
+#if !defined(__vita__) && !defined(PNJ_N3DS) && !defined(PNJ_DC)
 static const char *DATA_HELP = "Pac'N-Jump needs the game data from your own copy of the original Android APK.\n\nDrag the APK onto this window, or run:  pnj --import game.apk";
 #endif
 #endif
@@ -277,6 +312,7 @@ static void tf_text(SDL_Renderer *r, const char *s, double cx, double y, int sc,
 }
 static float imp_shown;                                     /* the loader bar's own position, permille: it eases toward the real progress and creeps a little ahead of it, so it never looks stuck */
 static Uint64 imp_t0;
+#ifndef PNJ_NOIMPORT
 static struct { SDL_Thread *th; volatile int busy, done, ok; char apk[1100], out[700], err[240]; int rm; } IJ;
 static int import_thread(void *p) { (void)p; IJ.ok = import_apk(IJ.apk, IJ.out, IJ.err, sizeof IJ.err); IJ.done = 1; return 0; }
 /* returns 0 (with imp_msg set) if it could not start. rm: delete the apk afterwards (Android hands us a temporary copy) */
@@ -363,9 +399,26 @@ static void draw_import(SDL_Renderer *r) {                  /* 320x480 field coo
 #endif
 #endif
 }
+#else
+/* no importer here: the same names, doing nothing, so the main loop below stays one piece */
+static struct { SDL_Thread *th; volatile int busy, done; int rm; char apk[4]; } IJ;
+static int imp_pm, imp_stage;
+static int import_start(const char *apk, const char *outpath, int rm) { (void)apk; (void)outpath; (void)rm; snprintf(imp_msg, sizeof imp_msg, "no import on this system"); return 0; }
+static int import_finish(void) { return 0; }
+static const char *imp_stage_name(int s) { (void)s; return ""; }
+static void draw_import(SDL_Renderer *r) { (void)r; }
+#endif
 #ifndef __ANDROID__
 static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet */
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255); SDL_RenderClear(r);
+#ifdef PNJ_DC
+    tf_text(r, "GAME DATA NOT FOUND", 160, 150, 2, 255, 224, 122);
+    tf_text(r, "PNJ.PACK BELONGS ON", 160, 190, 2, 255, 224, 122);
+    tf_text(r, "THE DISC OR THE SD CARD", 160, 216, 2, 255, 224, 122);
+    tf_text(r, "THE WEB BUILDER MAKES IT FROM", 160, 280, 1, 170, 170, 190);
+    tf_text(r, "YOUR OWN ANDROID APK", 160, 300, 1, 170, 170, 190);
+    return;
+#endif
 #if defined(__vita__) || defined(PNJ_N3DS)
     { char path[160]; snprintf(path, sizeof path, "%s", data_dir());
       for (char *c = path; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32;
@@ -397,7 +450,7 @@ static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet
 /* ---------- frame ---------- */
 #include "menus.h"
 
-#ifndef PNJ_N3DS
+#if !defined(PNJ_N3DS) && !defined(PNJ_DC)
 /* ---------- renderer and HDR state ---------- */
 static int hdr_possible = 1;                                /* 0 once a renderer would not give us linear output (no HDR backend on this system) */
 static SDL_Renderer *make_renderer(SDL_Window *win, int want_hdr) {
@@ -519,6 +572,26 @@ static void mouse_field(SDL_Window *w, SDL_Renderer *rr, float x, float y, float
 static void finger_field(SDL_Window *w, SDL_Renderer *rr, float nx, float ny, float *lx, float *ly) {
     int ww, wh; SDL_GetWindowSize(w, &ww, &wh); mouse_field(w, rr, nx * ww, ny * wh, lx, ly);
 }
+#elif defined(PNJ_DC)
+/* ---------- Dreamcast: one screen, the 320x480 field in the middle of 640x480 (dc_gfx.h) ---------- */
+static int hdr_possible = 0;
+static SDL_Renderer *make_renderer(SDL_Window *win, int want_hdr) { (void)win; (void)want_hdr; return pnj_gfx_open(); }
+static void hdr_poll(SDL_Renderer *r) { (void)r; }
+static SDL_Texture *tgt; static int tgt_w, tgt_h, t_cx, t_cy, applied_orient = -1, applied_scale = -1, applied_int = -1;
+static void orient_apply(SDL_Window *w, SDL_Renderer *rr) { (void)w; (void)rr; dc_tate = SV.orient; }       /* tate: see dc_gfx.h */
+static void draw_current(SDL_Renderer *rr) {
+    if (need_data) { draw_drop_hint(rr); return; }
+    hdr_gain = 1.0f;
+    if (ui_mode == UI_PLAY) render(rr); else draw_menu(rr);
+}
+static void present_frame(SDL_Renderer *rr) {
+    pnj_gfx_begin(rr);
+    pnj_gfx_screen(rr);
+    draw_current(rr);
+    pnj_gfx_end(rr);
+}
+static void mouse_field(SDL_Window *w, SDL_Renderer *rr, float x, float y, float *lx, float *ly) { (void)w; (void)rr; *lx = x; *ly = y; }
+static void finger_field(SDL_Window *w, SDL_Renderer *rr, float nx, float ny, float *lx, float *ly) { (void)w; (void)rr; *lx = nx * PNJ_W; *ly = ny * PNJ_H; }
 #else
 /* ---------- 3DS: one renderer, two screens ---------- */
 static int hdr_possible = 0;
@@ -621,7 +694,51 @@ static void data_loaded(void) {
     if (b) { int k = atlas_parse((const char *)b, n); free(b); SDL_Log("atlas: %d sprites", k); }
     help_load();
 }
-static void new_game(uint32_t seed, int stage) { cur_stage = stage; pnj_new(&G, seed, stage); IN.ramp = 0; touch_dir = 0; paused = 0; }
+#ifdef PNJ_INTERP
+#include "interp.h"
+static float interp_t = 1.0f;                            /* how far the clock is between the last two simulation steps, 0..1 */
+#endif
+#ifdef PNJ_DC
+/* Loading screens. Everything that reads the disc or decodes (start-up, and the start of each level) happens behind one of these, so nothing
+ * hitches while you play or move around the menus. A bar needs a known total, so the start-up screen counts its steps. */
+static SDL_Renderer *dc_rr;
+static int ld_done, ld_total, ld_note;
+static void dc_loading(const char *what) {
+    SDL_Renderer *r = dc_rr; if (!r) return;
+    pnj_gfx_begin(r); pnj_gfx_screen(r); SDL_SetRenderDrawColor(r, 0, 0, 0, 255); SDL_RenderClear(r);
+    tf_text(r, "LOADING", 160, 150, 4, 255, 224, 122);
+    if (ld_total) {
+        SDL_FRect fr = { 40, 250, 240, 18 }, in = { 43, 253, (float)(234 * (ld_done > ld_total ? ld_total : ld_done) / ld_total), 12 };
+        SDL_SetRenderDrawColor(r, 255, 255, 255, 255); SDL_RenderRect(r, &fr);
+        SDL_SetRenderDrawColor(r, 255, 224, 122, 255); if (in.w > 0) SDL_RenderFillRect(r, &in);
+        char t[16]; snprintf(t, sizeof t, "%d%%", ld_total ? 100 * (ld_done > ld_total ? ld_total : ld_done) / ld_total : 0);
+        tf_text(r, t, 160, 280, 2, 255, 255, 255);
+    }
+    if (what) tf_text(r, what, 160, 318, 2, 200, 200, 200);
+    if (ld_note) {
+        tf_text(r, "THE FIRST LOAD CAN TAKE", 160, 370, 2, 255, 255, 255);
+        tf_text(r, "UP TO A MINUTE.", 160, 392, 2, 255, 255, 255);
+        tf_text(r, "THE GAME LOADS ITS GRAPHICS", 160, 424, 1, 170, 170, 170);
+        tf_text(r, "AND MUSIC NOW SO IT RUNS SMOOTHLY.", 160, 436, 1, 170, 170, 170);
+    }
+    pnj_gfx_end(r);
+}
+static void dc_boot_tick(const char *what) { ld_done++; dc_loading(what); }
+#endif
+static void new_game(uint32_t seed, int stage) {
+#ifdef PNJ_DC
+    if (dc_rr) {                                         /* this stage's two sheets and its music, now rather than mid-game */
+        save_commit(); audio_music(""); dc_audio_hush(); ld_total = 0; ld_note = 0; dc_loading("GETTING THE STAGE READY");
+        char tr[16]; snprintf(tr, sizeof tr, "bgm%d", stage + 2);
+        get_tex(dc_rr, 5 + 2 * stage); get_tex(dc_rr, 6 + 2 * stage); audio_music_prefetch(tr);      /* normally already resident: every sheet is loaded at start-up */
+        dc_audio_unhush();
+    }
+#endif
+    cur_stage = stage; pnj_new(&G, seed, stage); IN.ramp = 0; touch_dir = 0; paused = 0;
+#ifdef PNJ_INTERP
+    interp_reset(&G);
+#endif
+}
 #ifdef PNJ_N3DS
 /* stereo depth by draw-list layer: platforms sit on the screen, pickups and enemies float in front, the player a little more, effects pop out.
  * Eaten items burst toward you, and on a power-up the enemies jump forward. */
@@ -642,8 +759,15 @@ static void render(SDL_Renderer *r) {
     nhits = 0;
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
     SDL_RenderClear(r);
+#ifdef PNJ_INTERP
+    if (ui_mode == UI_PLAY && ID_ok) {                                  /* blend the last two simulation steps by how far the clock is between them */
+        float t = paused ? 1.0f : interp_t, cs = (float)G.cam594; G.cam594 = (fx)interp_cam(t);
+        draw_bg(r); G.cam594 = (fx)cs; interp_blend(&G, t);
+    } else { draw_bg(r); pnj_build_draw(&G); }
+#else
     draw_bg(r);
     pnj_build_draw(&G);
+#endif
     for (int i = 0; i < G.ndraw; i++) {
         const pnj_draw *d = &G.draw[i];
 #ifdef PNJ_N3DS
@@ -726,7 +850,7 @@ static double current_tilt(void) {
     return t;
 }
 
-#ifdef PNJ_N3DS
+#if defined(PNJ_N3DS) || defined(PNJ_DC)
 static int selftest(int steps, uint32_t seed, const char *bmp, int stage, int level) { (void)steps; (void)seed; (void)bmp; (void)stage; (void)level; return 2; }
 #else
 static int selftest(int steps, uint32_t seed, const char *bmp, int stage, int level) {
@@ -762,7 +886,63 @@ static int no_audio;                                  /* set at start-up when th
 #else
 #define no_audio 0
 #endif
+#if !defined(PNJ_N3DS) && !defined(PNJ_DC)
+#include "dtx.h"
+/* --dcpack in.pack [--out out.pack]: copies a pack and adds the Dreamcast textures (dc/<sheet>.dtx, see dtx.h). Everything else is copied as it is. */
+static int dcpack(const char *in, const char *outp) {
+    if (!pack_open(in)) { fprintf(stderr, "cannot read the pack %s\n", in); return 1; }
+    int cap = PKN + PNJ_NTEX + 1, nf = 0;
+    char (*nm)[56] = (char (*)[56])calloc((size_t)cap, 56); unsigned char **dat = (unsigned char **)calloc((size_t)cap, sizeof *dat); size_t *sz = (size_t *)calloc((size_t)cap, sizeof *sz);
+    if (!nm || !dat || !sz) { fprintf(stderr, "out of memory\n"); return 1; }
+    for (int i = 0; i < PKN; i++) {
+        if (!strncmp(PK[i].name, "dc/", 3)) continue;                 /* rebuilt below */
+        size_t n; unsigned char *b = pack_read(PK[i].name, &n);
+        if (!b) { fprintf(stderr, "cannot read %s from the pack\n", PK[i].name); return 1; }
+        snprintf(nm[nf], 56, "%s", PK[i].name); dat[nf] = b; sz[nf] = n; nf++;
+    }
+    int made = 0;
+    for (int t = 0; t < PNJ_NTEX; t++) {
+        char pn[64]; snprintf(pn, sizeof pn, "tex/%s.png", PNJ_TEXTURES[t]);
+        size_t n; unsigned char *b = pack_read(pn, &n); if (!b) continue;
+        int w = 0, h = 0, c = 0; unsigned char *px = stbi_load_from_memory(b, (int)n, &w, &h, &c, 4); free(b);
+        if (!px) { fprintf(stderr, "cannot decode %s\n", pn); continue; }
+        int sh = w >= 512 ? 2 : 1, dw = w / sh, dh = h / sh;
+        if ((dw & (dw - 1)) || (dh & (dh - 1)) || dw < 8 || dh < 8 || dw > 1024 || dh > 1024) { fprintf(stderr, "%s: size %dx%d does not suit the console, skipped\n", pn, dw, dh); stbi_image_free(px); continue; }
+        uint16_t *lin = (uint16_t *)malloc((size_t)dw * dh * 2); if (!lin) { fprintf(stderr, "out of memory\n"); return 1; }
+        pnj_pack4444(px, w, h, sh, lin); stbi_image_free(px);
+        size_t on = 8 + (size_t)dw * dh * 2; int vq = (dw == dh);
+        if (vq) on = 8 + 2048 + (size_t)(dw / 2) * (dh / 2);
+        unsigned char *o = (unsigned char *)malloc(on); if (!o) { fprintf(stderr, "out of memory\n"); return 1; }
+        memcpy(o, vq ? "DTX2" : "DTX1", 4); o[4] = (unsigned char)dw; o[5] = (unsigned char)(dw >> 8); o[6] = (unsigned char)dh; o[7] = (unsigned char)(dh >> 8);
+        if (vq) { if (!pnj_vq4444(lin, dw, dh, o + 8)) { fprintf(stderr, "%s: could not compress\n", pn); free(o); free(lin); continue; } }
+        else memcpy(o + 8, lin, (size_t)dw * dh * 2);
+        free(lin);
+        printf("\r%-16s %dx%d %s %6zu bytes\n", PNJ_TEXTURES[t], dw, dh, vq ? "VQ  " : "raw ", on); fflush(stdout);
+        snprintf(nm[nf], 56, "dc/%s.dtx", PNJ_TEXTURES[t]); dat[nf] = o; sz[nf] = on; nf++; made++;
+    }
+    if (!made) { fprintf(stderr, "no sprite sheets found in the pack\n"); return 1; }
+    FILE *f = fopen(outp, "wb"); if (!f) { fprintf(stderr, "cannot write %s\n", outp); return 1; }
+    unsigned char hd[12]; memcpy(hd, "PNJPACK1", 8); hd[8] = (unsigned char)nf; hd[9] = (unsigned char)(nf >> 8); hd[10] = hd[11] = 0;
+    fwrite(hd, 1, 12, f);
+    int *ord = (int *)malloc((size_t)nf * sizeof(int)); if (!ord) { fprintf(stderr, "out of memory\n"); return 1; }
+    { int k = 0; for (int pass = 0; pass < 3; pass++) for (int i = 0; i < nf; i++) {          /* the console's boot sweep reads dc/ first; the PNG sheets are never read there */
+        int key = !strncmp(nm[i], "dc/", 3) ? 0 : !strncmp(nm[i], "tex/", 4) ? 2 : 1; if (key == pass) ord[k++] = i; } }
+    size_t off = 12; for (int i = 0; i < nf; i++) off += 2 + strlen(nm[i]) + 8;
+    for (int oi = 0; oi < nf; oi++) {
+        int i = ord[oi]; size_t l = strlen(nm[i]); unsigned char e[2]; e[0] = (unsigned char)l; e[1] = (unsigned char)(l >> 8); fwrite(e, 1, 2, f); fwrite(nm[i], 1, l, f);
+        unsigned char v[8]; v[0] = (unsigned char)off; v[1] = (unsigned char)(off >> 8); v[2] = (unsigned char)(off >> 16); v[3] = (unsigned char)(off >> 24);
+        v[4] = (unsigned char)sz[i]; v[5] = (unsigned char)(sz[i] >> 8); v[6] = (unsigned char)(sz[i] >> 16); v[7] = (unsigned char)(sz[i] >> 24); fwrite(v, 1, 8, f);
+        off += sz[i];
+    }
+    for (int oi = 0; oi < nf; oi++) { int i = ord[oi]; fwrite(dat[i], 1, sz[i], f); free(dat[i]); }
+    free(ord); fclose(f);
+    printf("%s: %d files, %d Dreamcast textures added\n", outp, nf, made);
+    return 0;
+}
+#endif
+
 int main(int argc, char *argv[]) {
+    const char *dcpack_arg = NULL;
     int selftest_steps = 0; uint32_t seed = 0; const char *bmp = NULL; int st_arg = 0, lv_arg = 0; const char *pack_arg = NULL, *import_arg = NULL, *import_out = NULL; int packinfo = 0, audiotest = 0, start_fs = 0, cli_orient = -1, windowed = 0, cli_hdr = -1;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--selftest") && i + 1 < argc) selftest_steps = atoi(argv[++i]);
@@ -776,6 +956,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--import") && i + 1 < argc) import_arg = argv[++i];
         else if (!strcmp(argv[i], "--out") && i + 1 < argc) import_out = argv[++i];
         else if (!strcmp(argv[i], "--audiotest")) audiotest = 1;
+        else if (!strcmp(argv[i], "--dcpack") && i + 1 < argc) dcpack_arg = argv[++i];
         else if (!strcmp(argv[i], "--fullscreen") || !strcmp(argv[i], "--tate")) start_fs = 1;
         else if (!strcmp(argv[i], "--windowed")) windowed = 1;
         else if (!strcmp(argv[i], "--hdr")) cli_hdr = 1;
@@ -794,7 +975,7 @@ int main(int argc, char *argv[]) {
 #ifdef __vita__
     SDL_SetHint(SDL_HINT_VITA_ENABLE_BACK_TOUCH, "0");     /* the rear pad would send stray taps */
 #endif
-#ifdef PNJ_N3DS
+#if defined(PNJ_N3DS) || defined(PNJ_DC)
     if (!SDL_Init(SDL_INIT_EVENTS)) {                       /* no SDL video on the 3DS: citro2d owns the screens (n3ds_gfx.h) */
 #else
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
@@ -824,6 +1005,11 @@ int main(int argc, char *argv[]) {
             printf("\r%-34s\r", ""); ok = import_finish();
         }
         printf("%s\n", imp_msg); SDL_Quit(); return ok ? 0 : 1; }
+#if !defined(PNJ_N3DS) && !defined(PNJ_DC)
+    if (dcpack_arg) { int rc = dcpack(dcpack_arg, import_out ? import_out : "pnj_dc.pack"); SDL_Quit(); return rc; }
+#else
+    (void)dcpack_arg;
+#endif
     if (packinfo) { printf("pack=%s files=%d maps=%d\n", PKN ? pack_path : "(none)", PKN, PK_NMAPS); SDL_Quit(); return PKN ? 0 : 1; }
     if (audiotest) {
         audio_init();
@@ -834,12 +1020,14 @@ int main(int argc, char *argv[]) {
         printf("audiotest jingle: now=%s pcm_frames=%u (stage music keeps playing if the jingle is not in the pack)\n", mus_name, (unsigned)mus_frames);
         SDL_Quit(); return 0;
     }
-    if (!selftest_steps && !no_audio) audio_init();
+#ifndef PNJ_DC
+    if (!selftest_steps && !no_audio) audio_init();      /* the Dreamcast loads its audio behind the loading screen below */
+#endif
     if (selftest_steps) { int rc = selftest(selftest_steps, seed ? seed : 1, bmp, st_arg, lv_arg); SDL_Quit(); return rc; }
 
     if (getenv("SteamDeck") || getenv("SteamGamepadUI")) start_fs = 1;        /* Steam sets these when it launches a game on a Steam Deck */
     if (windowed) start_fs = 0;
-#ifdef PNJ_N3DS
+#if defined(PNJ_N3DS) || defined(PNJ_DC)
     SDL_Window *win = SDL_CreateWindow("Pac'N-Jump", 320, 480, 0);
 #elif defined(__vita__)
     SDL_Window *win = SDL_CreateWindow("Pac'N-Jump", 960, 544, SDL_WINDOW_FULLSCREEN);
@@ -860,14 +1048,23 @@ int main(int argc, char *argv[]) {
     SDL_Renderer *r = make_renderer(win, applied_hdr);
     if (!r) { fprintf(stderr, "renderer: %s\n", SDL_GetError()); return 1; }
     SDL_SetRenderLogicalPresentation(r, PNJ_W, PNJ_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
-#ifndef PNJ_N3DS
+#if !defined(PNJ_N3DS) && !defined(PNJ_DC)
     SDL_InitSubSystem(SDL_INIT_GAMEPAD);
     { int ng = 0; SDL_JoystickID *ids = SDL_GetGamepads(&ng); for (int i = 0; i < ng; i++) SDL_OpenGamepad(ids[i]); SDL_free(ids); }
 #endif
 
     srand((unsigned)SDL_GetTicks()); ui_enter(UI_TITLE); orient_apply(win, r);
     need_data = !data_present();
-#if !defined(__ANDROID__) && !defined(__vita__) && !defined(PNJ_N3DS)
+#ifdef PNJ_DC
+    dc_rr = r;
+    if (!need_data) {                                    /* sound, music and the sheets every menu uses: load them now behind a loading screen, so no menu hitches later */
+        ld_done = 0; ld_total = 25 + 2 + PNJ_NTEX; ld_note = 1; boot_cb = dc_boot_tick; dc_loading("STARTING");
+        audio_init(); boot_cb = NULL; dc_audio_hush();   /* nothing refills the sound stream while this screen waits */
+        for (int i = 0; i < PNJ_NTEX; i++) { dc_loading("GRAPHICS"); get_tex(r, i); ld_done++; }   /* all of them: with the VQ sheets they fit in video memory together, so no menu or stage change reads the disc */
+        dc_loading("DONE"); ld_note = 0; dc_audio_unhush();
+    } else audio_init();
+#endif
+#if !defined(__ANDROID__) && !defined(__vita__) && !defined(PNJ_N3DS) && !defined(PNJ_DC)
     if (need_data) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Game data needed", DATA_HELP, win);
 #endif
     if (seed) start_stage(0);
@@ -877,6 +1074,9 @@ int main(int argc, char *argv[]) {
         SDL_Event e;
 #ifdef PNJ_N3DS
         pnj_n3ds_pump();                                    /* buttons, circle pad and touch screen -> SDL events */
+#endif
+#ifdef PNJ_DC
+        pnj_dc_pump();                                      /* controller -> SDL events, and the audio stream is topped up */
 #endif
         while (SDL_PollEvent(&e)) {
             if (IJ.busy && e.type != SDL_EVENT_QUIT && e.type != SDL_EVENT_DROP_FILE && !(e.type >= SDL_EVENT_WINDOW_FIRST && e.type <= SDL_EVENT_WINDOW_LAST) && e.type != SDL_EVENT_WILL_ENTER_BACKGROUND && e.type != SDL_EVENT_DID_ENTER_FOREGROUND) continue;   /* importing: the window only draws the loader */
@@ -1003,12 +1203,21 @@ int main(int argc, char *argv[]) {
             ui_L++;
             if (ui_mode != UI_PLAY) { acc -= step_ms; n++; continue; }
             pnj_step(&G, (fx)current_tilt());
+#ifdef PNJ_INTERP
+            interp_snap(&G);
+#endif
             for (int i = 0; i < G.nev; i++) audio_play(G.ev[i] == PNJ_SFX_WARN ? A_WARN : G.ev[i]);   /* core sfx ids 1..18 match the mixer slots; the boss warning has its own */
             G.nev = 0;
             acc -= step_ms; n++;
             if (G.over) { run_finished(); break; }
         }
         if (n == 5) acc = 0;
+#ifdef PNJ_DC
+        if (ui_mode != UI_PLAY || paused) save_tick();          /* a pending memory card write goes out once the menus have been left alone for a moment */
+#endif
+#ifdef PNJ_INTERP
+        interp_t = (float)(acc / step_ms); if (interp_t > 1.0f) interp_t = 1.0f;
+#endif
         { char tr[16]; snprintf(tr, sizeof tr, "bgm%d", cur_stage + 2);
           audio_music(ui_mode == UI_OVER ? "" : ui_mode != UI_PLAY ? "bgm1" : (paused || G.p.dead) ? "" : G.p.power ? "wakawaka" : tr); }
         orient_apply(win, r);

@@ -59,7 +59,9 @@ static void audio_load_sfx(int slot, const char *file) {
 /* Music tracks are cached (raw ogg bytes, or decoded PCM for a wav track) so switching to the power-up jingle and back
  * does not hit the pack file or the decoder mid-game. Reading and decoding happen with the audio NOT locked; only the
  * pointer swap is under the lock, so the audio callback never waits on slow SD reads (the 3DS power-up stutter). */
-typedef struct { char name[32]; unsigned char *ogg; size_t n; short *pcm; Uint32 frames; } mus_ent;
+typedef struct { char name[32]; unsigned char *ogg; size_t n; short *pcm; Uint32 frames; int pin; } mus_ent;
+static void (*boot_cb)(const char *what);                    /* set while a loading screen is up (Dreamcast): called after each piece of audio is loaded */
+static int mus_pinned(const char *t) { return !strcmp(t, "bgm1") || !strcmp(t, "wakawaka"); }    /* menu music and the power-up jingle stay in memory, so the menus never read the disc */
 static mus_ent MC[4]; static mus_ent *mus_cur; static int mc_next;
 static void mus_ent_free(mus_ent *e) { free(e->ogg); SDL_free(e->pcm); memset(e, 0, sizeof *e); }
 static mus_ent *mus_find(const char *track) {
@@ -81,8 +83,8 @@ static int mus_fetch(const char *track, mus_ent *o) {        /* slow part: file 
     free(d); return ok;
 }
 static mus_ent *mus_insert(const mus_ent *src) {             /* audio locked by the caller; never evicts the entry that is playing */
-    int i = mc_next; for (int k = 0; k < 4; k++, i = (i + 1) & 3) if (&MC[i] != mus_cur) break;
-    mc_next = (i + 1) & 3; mus_ent_free(&MC[i]); MC[i] = *src; return &MC[i];
+    int i = mc_next; for (int k = 0; k < 4; k++, i = (i + 1) & 3) if (&MC[i] != mus_cur && !MC[i].pin) break;
+    mc_next = (i + 1) & 3; mus_ent_free(&MC[i]); MC[i] = *src; MC[i].pin = mus_pinned(src->name); return &MC[i];
 }
 static void audio_music_stop(void) {                         /* audio locked by the caller */
     if (mus_vb) { stb_vorbis_close(mus_vb); mus_vb = 0; }
@@ -150,12 +152,12 @@ static void audio_load_all(void) {      /* (re)loads every effect; used at start
     if (aud_stream) SDL_LockAudioStream(aud_stream);
     for (int v = 0; v < 16; v++) voices[v].s = 0;
     for (int i = 0; i < 32; i++) { SDL_free(SFXB[i].buf); SFXB[i].buf = 0; SFXB[i].len = 0; }
-    for (int i = 0; i < 18; i++) audio_load_sfx(i + 1, names[i]);
-    audio_load_sfx(A_SELECT, "select"); audio_load_sfx(A_DECIDE, "decide"); audio_load_sfx(A_CANCEL, "cancel");
-    audio_load_sfx(A_GAMEOVER, "gameover"); audio_load_sfx(A_HISCORE, "hiscore"); audio_load_sfx(A_EAT_ITEM, "eat_item");
-    audio_load_sfx(A_WARN, "st8_warning");
+    for (int i = 0; i < 18; i++) { audio_load_sfx(i + 1, names[i]); if (boot_cb) boot_cb("Sound effects"); }
+    static const struct { int slot; const char *f; } more[] = { { A_SELECT, "select" }, { A_DECIDE, "decide" }, { A_CANCEL, "cancel" },
+        { A_GAMEOVER, "gameover" }, { A_HISCORE, "hiscore" }, { A_EAT_ITEM, "eat_item" }, { A_WARN, "st8_warning" } };
+    for (int i = 0; i < 7; i++) { audio_load_sfx(more[i].slot, more[i].f); if (boot_cb) boot_cb("Sound effects"); }
     if (aud_stream) SDL_UnlockAudioStream(aud_stream);
-    if (aud_stream) audio_music_prefetch("wakawaka");
+    if (aud_stream) { audio_music_prefetch("wakawaka"); if (boot_cb) boot_cb("Music"); audio_music_prefetch("bgm1"); if (boot_cb) boot_cb("Music"); }
 }
 /* SDL3 audio streams: SDL asks for more data and we feed it from the same mixer callback the SDL2 build used */
 static void SDLCALL audio_sdl_cb(void *ud, SDL_AudioStream *st, int additional, int total) {

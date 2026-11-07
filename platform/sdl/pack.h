@@ -38,26 +38,37 @@ static int pack_has(const char *name) { for (int i = 0; i < PKN; i++) if (!strcm
 static char data_base[600];
 static const char *data_dir(void) {
     static int done; if (done) return data_base; done = 1;
+#ifdef PNJ_DC
+    snprintf(data_base, sizeof data_base, "/vmu/a1/");               /* settings and records go on the first memory card; the pack is read from the disc or the SD card (pack_find) */
+    return data_base;
+#endif
 #ifdef PNJ_N3DS
     /* fixed folder on the SD card, made here: SDL's pref path was coming back empty on the 3DS */
     snprintf(data_base, sizeof data_base, "sdmc:/3ds/pacnjump/");
     mkdir("sdmc:/3ds", 0777); mkdir("sdmc:/3ds/pacnjump", 0777);
     return data_base;
 #endif
-#if !defined(__ANDROID__) && !defined(__APPLE__) && !defined(__vita__) && !defined(PNJ_N3DS)
+#if !defined(__ANDROID__) && !defined(__APPLE__) && !defined(__vita__) && !defined(PNJ_N3DS) && !defined(PNJ_DC)
     const char *bp = SDL_GetBasePath();
     if (bp) {
         char t[700]; snprintf(t, sizeof t, "%spnj.tmp", bp);
         FILE *f = fopen(t, "wb"); if (f) { fclose(f); remove(t); snprintf(data_base, sizeof data_base, "%s", bp); return data_base; }
     }
 #endif
+#ifndef PNJ_DC
     char *pp = SDL_GetPrefPath("jon", "pnj"); if (pp) { snprintf(data_base, sizeof data_base, "%s", pp); SDL_free(pp); }
+#endif
     return data_base;
 }
 static void data_path(char *out, size_t n, const char *name) { snprintf(out, n, "%s%s", data_dir(), name); }
 
 /* find a pack: --pack arg, PNJ_PACK env, the data folder, then the current directory */
 static int pack_find(const char *arg) {
+#ifdef PNJ_DC
+    static const char *const where[] = { "/cd/pnj.pack", "/sd/pnj.pack", "/pc/pnj.pack", "/rd/pnj.pack", NULL };      /* disc, SD card, dc-tool host folder */
+    for (int i = 0; where[i]; i++) if (pack_open(where[i])) return 1;
+    (void)arg; return 0;
+#endif
     if (arg && pack_open(arg)) return 1;
     const char *e = getenv("PNJ_PACK"); if (e && pack_open(e)) return 1;
     char p[700]; data_path(p, sizeof p, "pnj.pack"); if (pack_open(p)) return 1;
