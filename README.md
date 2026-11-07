@@ -116,7 +116,7 @@ No art, sound, level data, sprite table or Help text. What is in the repo is the
 | Platform | Branch | State |
 | --- | --- | --- |
 | PS Vita | `vita` | Runs in Vita3K, tate included. Real Vita test pending. |
-| Nintendo 3DS | `3ds` | Plays on a New 3DS XL with sound and stereo 3D, imports your APK on the console, and builds a `.cia` for the Home menu. Open: closing the app from the Home menu, a layout pass on the smaller menus, old 3DS testing. |
+| Nintendo 3DS | `3ds` | Plays on a New 3DS XL with sound and stereo 3D, imports your APK on the console, and builds a `.cia` for the Home menu. Open: an icon that matches the Android app's (the repo can't hold that art, so it would have to come from the player's own APK or be a close redraw), old 3DS testing. |
 | Dreamcast | `dreamcast` | Plays from a CDI with your own pack in Flycast, with loading screens, 60 fps and tate. Open: scores and preferences on the VMU (written through deferred saves, still to be checked in an emulator with a VMU and on a real console), and a real hardware test. |
 
 **Future platforms.** Nothing here is started. Roughly easiest first.
