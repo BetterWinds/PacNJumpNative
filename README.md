@@ -117,7 +117,7 @@ No art, sound, level data, sprite table or Help text. What is in the repo is the
 | --- | --- | --- |
 | PS Vita | `vita` | Runs in Vita3K, tate included. Real Vita test pending. |
 | Nintendo 3DS | `3ds` | Plays on a New 3DS XL with sound and stereo 3D, imports your APK on the console, and builds a `.cia` for the Home menu. Open: an icon that matches the Android app's (the repo can't hold that art, so it would have to come from the player's own APK or be a close redraw), old 3DS testing. |
-| Dreamcast | `dreamcast` | Plays from a CDI with your own pack in Flycast, with loading screens, 60 fps and tate. Open: scores and preferences on the VMU (written through deferred saves, still to be checked in an emulator with a VMU and on a real console), and a real hardware test. PAL consoles are untested: the game steps at 60 per second, so a 50 Hz output needs either a 60 Hz video mode or a timing change that keeps the game speed the same. |
+| Dreamcast | `dreamcast` | Builds one CDI from your APK in the browser. Works on a real console in progressive and interlaced video on CRTs, with sound, loading screens, 60 fps and tate. Scores and preferences save to the VMU (about 1 block). Open: PAL support. The game steps at 60 per second, so a 50 Hz console needs a timing change that keeps the game speed the same. Burned discs are untested. |
 
 **Future platforms.** Nothing here is started. Roughly easiest first.
 
