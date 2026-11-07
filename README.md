@@ -6,17 +6,19 @@ A port of Pac'N-Jump (Namco, 2011), a mobile game that was pulled from the store
 
 ## Getting it running
 
-**Windows, macOS, Linux:** builds come from the `desktop` workflow (Actions tab, Artifacts). Unzip, run, and drag the APK onto the window. It imports once and shows a progress bar while it works. Tagged versions will show up under Releases. More in `packaging/README-desktop.txt`.
+Downloads are on the [Releases page](https://github.com/heyjonanderson/PacNJumpNative/releases). Every build in this list is attached to each release, except the Android and Dreamcast ones, which you make on the project page. Builds of the latest commit are also in the Actions tab, under Artifacts.
 
-**Android, no tools:** open https://heyjonanderson.github.io/PacNJumpNative/, drop your original APK on the page and download the APK it builds. It all happens in your browser and nothing is uploaded. Android 7.0 and up, 64-bit.
+**Windows, macOS, Linux:** unzip, run, and drag the APK onto the window. It imports once and shows a progress bar while it works. More in `packaging/README-desktop.txt`.
+
+**Android, no tools:** open the [project page](https://heyjonanderson.github.io/PacNJumpNative/), drop your original APK on the page and download the APK it builds. It all happens in your browser and nothing is uploaded. Android 7.0 and up, 64-bit.
 
 **Android, import on the phone:** `android\package.bat byo` builds an APK with no game data in it. Install it and pick the original APK on first launch.
 
-**Nintendo 3DS:** install `pacnjump.cia` (FBI or similar) to get a Home menu icon, or run `pacnjump.3dsx` from the Homebrew Launcher. Copy your APK onto the SD card as the game's first screen shows and it imports on the console, which takes a few minutes the first time.
+**Nintendo 3DS:** install `pacnjump.cia` (with FBI or similar) to get a Home menu icon, or run `pacnjump.3dsx` from the Homebrew Launcher. Copy your APK onto the SD card as the game's first screen shows and it imports on the console, which takes a few minutes the first time.
 
 **PS Vita:** install `pacnjump.vpk` with VitaShell, launch the game once, then copy your APK into `ux0:data/jon/pnj/`. The game finds it and imports it by itself, which takes up to a minute the first time. Options > Video has tate for holding the Vita on its side, and either stick steers.
 
-**Dreamcast:** open `dreamcast.html` on the same page, drop your original APK and download `PacNJump.cdi`. It takes a minute or two and nothing is uploaded. Run it in Flycast, from a disc emulator, or burn it as an Audio/Data (MIL-CD style) image. It has been tested on a real console, not on a burned disc. The page needs the disc template that the Dreamcast build makes, so it only works once that build has run.
+**Dreamcast:** open the [Dreamcast page](https://heyjonanderson.github.io/PacNJumpNative/dreamcast.html), drop your original APK on it and download `PacNJump.cdi`. It takes a minute or two and nothing is uploaded. Open the CDI in Flycast or copy it to a disc emulator the way you would any other image. You can also burn it as an Audio/Data (MIL-CD style) image, though burned discs have not been tried yet.
 
 **From source:** see Building below.
 
@@ -84,6 +86,8 @@ To build the template locally, `android\package.bat template` writes `web/templa
 core/            portable C99 game core: physics, camera, generator, RNG, draw list, input model
 platform/sdl/    SDL3 shell: main.c (render, input), menus.h, audio.h, pack.h (finds and reads pnj.pack),
                  import.h (APK to pack), aac_dec.c (jingle decoder), atlas.h
+platform/n3ds/   3DS drawing (citro2d), the touch screen and the exit watchdog
+platform/dc/     Dreamcast drawing on the PVR (dc_gfx.h) and the SDL calls it stands in for (dc_sdl.h); the VMU save code is in pack.h
 android/         Android Studio project (SDL Java glue, CMake into ../core, file picker activity)
 web/             the browser builders: builder.js (APK to pack to signed APK, client side), index.html, dreamcast.html, dc_pack.js, dc_disc.js, aac.wasm
 tools/           make_pack.py, dexatlas.py, gen_maps.py, parity scripts, aac_wasm/ (builds web/aac.wasm)
