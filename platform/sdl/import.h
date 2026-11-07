@@ -6,6 +6,19 @@
 #include <ctype.h>
 #include <stdio.h>
 
+/* Progress for the loader screen. import_apk may run on its own thread; the UI only reads these two ints (permille done, and which step). */
+enum { IS_OPEN, IS_UNPACK, IS_SPRITES, IS_AUDIO, IS_WRITE, IS_DONE };
+static volatile int imp_pm = 0, imp_stage = IS_OPEN;
+static void imp_prog(int pm, int st) { imp_pm = pm; imp_stage = st; }
+/* Timing notes: on the 3DS each stage's start time goes to sdmc:/3ds/pacnjump/import_log.txt, so a slow import can be traced to a stage. */
+#ifdef PNJ_N3DS
+static void imp_mark(const char *what) { FILE *f = fopen("sdmc:/3ds/pacnjump/import_log.txt", "ab"); if (f) { fprintf(f, "%8u ms  %s\n", (unsigned)SDL_GetTicks(), what); fclose(f); } }
+#else
+#define imp_mark(w) ((void)0)
+#endif
+extern void (*pnj_aac_progress)(unsigned done, unsigned total);
+static void imp_aac_prog(unsigned done, unsigned total) { imp_prog(700 + (int)(100u * done / (total ? total : 1)), IS_AUDIO); }
+
 typedef struct { char name[160]; Uint32 method, csize, usize, lho; } zip_ent;
 typedef struct { unsigned char *d; size_t n; zip_ent *e; int ne; } zip_t;
 typedef struct { char name[64]; unsigned char *d; size_t n; } imp_file;
@@ -19,7 +32,12 @@ static int zip_open(zip_t *z, const char *path) {
     Sint64 sz = SDL_GetIOSize(f);
     if (sz < 100) { SDL_CloseIO(f); return 0; }
     z->d = (unsigned char *)malloc((size_t)sz); z->n = (size_t)sz;
-    if (!z->d || SDL_ReadIO(f, z->d, (size_t)sz) != (size_t)sz) { SDL_CloseIO(f); free(z->d); z->d = 0; return 0; }
+    if (!z->d) { SDL_CloseIO(f); return 0; }
+    for (size_t got = 0; got < (size_t)sz; ) {                  /* in pieces, so the loader bar moves while a slow SD card is read */
+        size_t want = (size_t)sz - got; if (want > (256u << 10)) want = 256u << 10;
+        if (SDL_ReadIO(f, z->d + got, want) != want) { SDL_CloseIO(f); free(z->d); z->d = 0; return 0; }
+        got += want; imp_prog((int)(35 * got / (size_t)sz), IS_OPEN);
+    }
     SDL_CloseIO(f);
     size_t eo = 0; for (size_t i = z->n - 22; ; i--) { if (rd32(z->d + i) == 0x06054b50) { eo = i; break; } if (i == 0 || z->n - i > 70000) return 0; }
     int cnt = (int)rd16(z->d + eo + 10); size_t cd = rd32(z->d + eo + 16);
@@ -120,18 +138,14 @@ static char *dex_atlas(const unsigned char *d, size_t n, size_t *outn) {
     free(rows); return out;
 }
 
-/* Progress for the loader screen. import_apk may run on its own thread; the UI only reads these two ints (permille done, and which step). */
-enum { IS_OPEN, IS_UNPACK, IS_SPRITES, IS_AUDIO, IS_WRITE, IS_DONE };
-static volatile int imp_pm = 0, imp_stage = IS_OPEN;
-static void imp_prog(int pm, int st) { imp_pm = pm; imp_stage = st; }
 
 static void imp_add(imp_file **fl, int *n, int *cap, const char *name, unsigned char *d, size_t sz) {
     if (*n == *cap) { *cap = *cap ? *cap * 2 : 128; *fl = (imp_file *)realloc(*fl, (size_t)*cap * sizeof **fl); }
     imp_file *f = &(*fl)[(*n)++]; snprintf(f->name, sizeof f->name, "%s", name); f->d = d; f->n = sz;
 }
 static int imp_cmp(const void *a, const void *b) { return strcmp(((const imp_file *)a)->name, ((const imp_file *)b)->name); }
-static void wr32(FILE *f, Uint32 v) { fputc(v & 255, f); fputc((v >> 8) & 255, f); fputc((v >> 16) & 255, f); fputc((int)(v >> 24), f); }
-static void wr16(FILE *f, Uint32 v) { fputc(v & 255, f); fputc((v >> 8) & 255, f); }
+#define PK32(q, v) do { Uint32 v_ = (Uint32)(v); *(q)++ = v_ & 255; *(q)++ = (v_ >> 8) & 255; *(q)++ = (v_ >> 16) & 255; *(q)++ = (unsigned char)(v_ >> 24); } while (0)
+#define PK16(q, v) do { Uint32 v_ = (Uint32)(v); *(q)++ = v_ & 255; *(q)++ = (v_ >> 8) & 255; } while (0)
 
 /* The power-up jingle (res/raw/wakawaka.3gp) is AAC-LC. aac_dec.c decodes it itself, so every desktop platform gets the same result with nothing else installed.
  * If that ever fails on some other file, the OS decoder is tried (Windows Media Foundation, macOS AudioToolbox, jingle_native.c), then ffmpeg if it is installed.
@@ -141,7 +155,8 @@ unsigned char *pnj_native_decode(const char *path, size_t *out_size);      /* ji
 static void imp_jingle(const zip_t *z, const char *out_pack, imp_file **fl, int *nf, int *cap) {
     int k = zip_find(z, "res/raw/wakawaka.3gp"); if (k < 0) return;
     size_t sz; unsigned char *b = zip_read(z, k, &sz); if (!b) return;
-    { size_t an = 0; unsigned char *ad = pnj_aac_decode(b, sz, &an); if (ad) { imp_add(fl, nf, cap, "audio/wakawaka.wav", ad, an); free(b); return; } }
+    pnj_aac_progress = imp_aac_prog;
+    { size_t an = 0; unsigned char *ad = pnj_aac_decode(b, sz, &an); pnj_aac_progress = 0; if (ad) { imp_add(fl, nf, cap, "audio/wakawaka.wav", ad, an); free(b); return; } }
 #if defined(__ANDROID__) || defined(__IPHONEOS__)
     (void)out_pack; free(b);
 #else
@@ -174,11 +189,11 @@ static int import_apk(const char *apk, const char *out_pack, char *err, size_t e
     static const char *SFX[] = { "balloon", "bound", "cancel", "candle", "decide", "eat01", "eat02", "eat03", "eat04", "eat05", "eat06", "eat07", "eat08", "eat_enemy",
         "eat_item", "eat_pow", "gameover", "hat", "hiscore", "jump", "mappy_jump", "miss", "select", "st8_warning", 0 };
     zip_t z; imp_file *fl = 0; int nf = 0, cap = 0, ok = 0, nmaps = 0; err[0] = 0;
-    imp_prog(0, IS_OPEN);
+    imp_prog(0, IS_OPEN); imp_mark("import start: reading apk");
     if (!zip_open(&z, apk)) { snprintf(err, errn, "could not read %s as a zip/APK", apk); return 0; }
     if (zip_find(&z, "AndroidManifest.xml") < 0 || zip_find(&z, "res/drawable-hdpi/sysparts.png") < 0) { snprintf(err, errn, "this is not the Pac'N-Jump Android APK"); goto done; }
     char nm[200], out[260]; size_t sz;
-    imp_prog(40, IS_UNPACK);
+    imp_prog(40, IS_UNPACK); imp_mark("apk read, unpacking textures");
     for (int i = 0; TEX[i]; i++) {
         imp_prog(40 + 160 * i / 21, IS_UNPACK);
         snprintf(nm, sizeof nm, "res/drawable-hdpi/%s.png", TEX[i]); int k = zip_find(&z, nm);
@@ -204,13 +219,13 @@ static int import_apk(const char *apk, const char *out_pack, char *err, size_t e
         }
     }
     {
-        imp_prog(600, IS_SPRITES);
+        imp_prog(600, IS_SPRITES); imp_mark("reading sprite table");
         int k = zip_find(&z, "classes.dex"); size_t dn = 0; unsigned char *dx = k >= 0 ? zip_read(&z, k, &dn) : 0;
         size_t an = 0; char *at = dx ? dex_atlas(dx, dn, &an) : 0; free(dx);
         if (!at) { snprintf(err, errn, "could not read the sprite table from classes.dex (is this the 1.1.0 APK?)"); goto done; }
         imp_add(&fl, &nf, &cap, "meta/atlas.txt", (unsigned char *)at, an);
     }
-    imp_prog(700, IS_AUDIO);
+    imp_prog(700, IS_AUDIO); imp_mark("converting audio");
     imp_jingle(&z, out_pack, &fl, &nf, &cap);
     if (nmaps != 42) { snprintf(err, errn, "expected 42 level maps, found %d", nmaps); goto done; }
     for (int i = 0; SFX[i]; i++) {
@@ -224,19 +239,53 @@ static int import_apk(const char *apk, const char *out_pack, char *err, size_t e
     }
     qsort(fl, (size_t)nf, sizeof *fl, imp_cmp);
     {
-        imp_prog(800, IS_WRITE);
+        imp_prog(800, IS_WRITE); imp_mark("writing pack");
         char tmp[620]; snprintf(tmp, sizeof tmp, "%s.tmp", out_pack);
-        FILE *f = fopen(tmp, "wb"); if (!f) { snprintf(err, errn, "cannot write %s", tmp); goto done; }
-        fwrite("PNJPACK1", 1, 8, f); wr32(f, (Uint32)nf);
-        Uint32 off = 12; for (int i = 0; i < nf; i++) off += 2 + (Uint32)strlen(fl[i].name) + 8;
-        for (int i = 0; i < nf; i++) { Uint32 l = (Uint32)strlen(fl[i].name); wr16(f, l); fwrite(fl[i].name, 1, l, f); wr32(f, off); wr32(f, (Uint32)fl[i].n); off += (Uint32)fl[i].n; }
-        for (int i = 0; i < nf; i++) { fwrite(fl[i].d, 1, fl[i].n, f); if ((i & 7) == 0) imp_prog(800 + 190 * i / nf, IS_WRITE); }
-        int bad = ferror(f); fclose(f);
+        size_t hdr_n = 12; for (int i = 0; i < nf; i++) hdr_n += 2 + strlen(fl[i].name) + 8;
+        unsigned char *hdr = (unsigned char *)malloc(hdr_n); if (!hdr) { snprintf(err, errn, "out of memory"); goto done; }
+        { unsigned char *q = hdr; memcpy(q, "PNJPACK1", 8); q += 8; PK32(q, (Uint32)nf);
+          Uint32 off = (Uint32)hdr_n;
+          for (int i = 0; i < nf; i++) { Uint32 l = (Uint32)strlen(fl[i].name); PK16(q, l); memcpy(q, fl[i].name, l); q += l; PK32(q, off); PK32(q, (Uint32)fl[i].n); off += (Uint32)fl[i].n; } }
+        size_t total = hdr_n, done_b = 0; for (int i = 0; i < nf; i++) total += fl[i].n;
+        int bad = 0, wrote = 0;
+#ifdef PNJ_N3DS
+        /* libctru's stdio layer flushes the SD card after every write call, and each flush took about a second: five minutes for the pack. Talk to the
+           file system directly, write big pieces with no flush, and flush once at the end. */
+        {
+            Handle h; const char *pp = !strncmp(tmp, "sdmc:", 5) ? tmp + 5 : tmp;
+            if (R_SUCCEEDED(FSUSER_OpenFileDirectly(&h, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""), fsMakePath(PATH_ASCII, pp), FS_OPEN_WRITE | FS_OPEN_CREATE, 0))) {
+                u64 pos = 0; u32 got = 0; wrote = 1;
+                FSFILE_SetSize(h, (u64)total);
+                if (R_FAILED(FSFILE_Write(h, &got, pos, hdr, (u32)hdr_n, 0)) || got != hdr_n) bad = 1;
+                pos += hdr_n; done_b = hdr_n;
+                for (int i = 0; i < nf && !bad; i++) {
+                    for (size_t o = 0; o < fl[i].n && !bad; ) {
+                        size_t c = fl[i].n - o; if (c > (1u << 20)) c = 1u << 20;
+                        if (R_FAILED(FSFILE_Write(h, &got, pos, fl[i].d + o, (u32)c, 0)) || got != c) bad = 1;
+                        o += c; pos += c; done_b += c; imp_prog(800 + (int)(190 * done_b / total), IS_WRITE);
+                    }
+                }
+                FSFILE_Flush(h); FSFILE_Close(h);
+            }
+        }
+#endif
+        if (!wrote) {
+            FILE *f = fopen(tmp, "wb"); if (!f) { free(hdr); snprintf(err, errn, "cannot write %s", tmp); goto done; }
+            fwrite(hdr, 1, hdr_n, f); done_b = hdr_n;
+            for (int i = 0; i < nf; i++) {                      /* 64 KB at a time, with the bar moving after each piece */
+                for (size_t o = 0; o < fl[i].n; ) {
+                    size_t c = fl[i].n - o; if (c > (64u << 10)) c = 64u << 10;
+                    fwrite(fl[i].d + o, 1, c, f); o += c; done_b += c; imp_prog(800 + (int)(190 * done_b / total), IS_WRITE);
+                }
+            }
+            bad = ferror(f); fclose(f);
+        }
+        free(hdr); imp_mark("pack written, moving into place");
         if (bad) { snprintf(err, errn, "write failed (disk full?)"); remove(tmp); goto done; }
         remove(out_pack);
         if (rename(tmp, out_pack) != 0) { snprintf(err, errn, "could not move the pack into place"); goto done; }
     }
-    ok = 1; imp_prog(1000, IS_DONE);
+    ok = 1; imp_prog(1000, IS_DONE); imp_mark("done");
 done:
     for (int i = 0; i < nf; i++) free(fl[i].d);
     free(fl); zip_close(&z);

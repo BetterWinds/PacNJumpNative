@@ -1,0 +1,72 @@
+# Builds the Nintendo 3DS port (.3dsx, and a .cia for the Home menu) with devkitARM. Works on the 3ds branch and on tags; neither contains game data.
+name: 3DS
+on:
+  push:
+    branches: ['3ds']
+    paths-ignore: ['web/**', 'android/**', '*.md']
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  n3ds:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Tools
+        run: |
+          export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
+          (dkp-pacman -Sy --noconfirm --needed 3ds-dev || true)
+          apt-get update && apt-get install -y --no-install-recommends cmake ninja-build git ca-certificates
+          ls $DEVKITPRO/libctru/lib | head; ls $DEVKITPRO/cmake
+      - name: OpenDSP
+        run: |
+          export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
+          export DEVKITARM=$DEVKITPRO/devkitARM
+          apt-get install -y --no-install-recommends python3
+          git clone https://github.com/Cellenseres/OpenDSP /tmp/opendsp
+          git -C /tmp/opendsp checkout a15c8615c1659f34bfb2b38df69a9860f4cc7080
+          make -C /tmp/opendsp/library install
+          ls $DEVKITPRO/portlibs/3ds/lib | grep opendsp
+      - name: Version
+        run: |
+          if [ "${{ github.ref_type }}" = tag ]; then v="${{ github.ref_name }}"; else v="b${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)"; fi
+          echo "PNJ_VERSION=$v" >> "$GITHUB_ENV"
+      - name: Build
+        run: |
+          export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
+          export DEVKITARM=$DEVKITPRO/devkitARM
+          export PATH=$DEVKITPRO/tools/bin:$DEVKITARM/bin:$PATH
+          cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake -DCMAKE_BUILD_TYPE=Release -DPNJ_VERSION=$PNJ_VERSION
+          cmake --build build
+          ls -la build/*.3dsx
+          cmake -S . -B build-alt -G Ninja -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake -DCMAKE_BUILD_TYPE=Release -DPNJ_VERSION=$PNJ_VERSION -DPNJ_3DS_TEX_FLIP=1
+          cmake --build build-alt
+          mkdir -p out && cp build/pacnjump.3dsx out/pacnjump.3dsx && cp build-alt/pacnjump.3dsx out/pacnjump-flip1.3dsx
+      - name: CIA (Home menu installer)
+        continue-on-error: true
+        run: |
+          export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
+          export PATH=$DEVKITPRO/tools/bin:$PATH
+          apt-get install -y --no-install-recommends wget unzip python3
+          wget -q https://github.com/diasurgical/bannertool/releases/download/1.2.0/bannertool.zip
+          unzip -j bannertool.zip "linux-x86_64/bannertool" -d $DEVKITPRO/tools/bin
+          wget -q https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18/makerom-v0.18-ubuntu_x86_64.zip
+          unzip -o makerom-v0.18-ubuntu_x86_64.zip makerom -d $DEVKITPRO/tools/bin
+          chmod a+x $DEVKITPRO/tools/bin/bannertool $DEVKITPRO/tools/bin/makerom
+          wget -q -O app.rsf https://gist.githubusercontent.com/jakcron/9f9f02ffd94d98a72632/raw/19df015e8a99ea9d6fcf9bfcf6da65db8ec6dc70/app.rsf
+          grep -n "Title\|ProductCode\|UniqueId" app.rsf | head
+          sed -i -e 's/CtrApp/PacNJump/' -e 's/CTR-P-CTAP/CTR-P-PNJP/' -e 's/0xff3ff/0xf1a31/' app.rsf
+          python3 - <<'PY'
+          import wave
+          w = wave.open("silence.wav", "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(22050); w.writeframes(b"\0\0" * 22050); w.close()
+          PY
+          bannertool makebanner -i packaging/n3ds/banner.png -a silence.wav -o banner.bnr
+          bannertool makesmdh -s "Pac'N-Jump" -l "Pac'N-Jump" -p " " -i packaging/n3ds/icon.png -o icon.icn
+          ELF=$(ls build/pacnjump.elf build/pacnjump 2>/dev/null | head -1); echo "elf: $ELF"
+          makerom -f cia -o out/pacnjump.cia -elf "$ELF" -rsf app.rsf -target t -exefslogo -icon icon.icn -banner banner.bnr
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with: { name: "pacnjump-3ds-${{ env.PNJ_VERSION }}", path: out/ }

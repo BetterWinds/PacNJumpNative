@@ -11,6 +11,7 @@
 #include "aac_tables.h"
 
 unsigned char *pnj_aac_decode(const unsigned char *file, size_t size, size_t *out_size);
+void (*pnj_aac_progress)(unsigned done, unsigned total) = 0;   /* optional: called every few frames while decoding */
 
 #define PI 3.14159265358979323846
 #ifdef AAC_TEST
@@ -53,7 +54,9 @@ typedef struct {
 typedef struct {
     int rate_idx, chans; chan_t ch[2]; unsigned rng; int sbr_seen;
     float wl[2][1024], ws[2][128];                            /* rising window halves: [0] sine, [1] Kaiser-Bessel derived */
-    float cos_l[8192], cos_s[1024], pow43[8192 + 16];
+    float pow43[8192 + 16];
+    /* DCT-IV tables for the two block sizes (index 0: M = 1024, 1: M = 128): pre and post rotation per point, and the roots of the M/2 point FFT */
+    float pre[2][512][2], post[2][512][2], root[2][256][2]; unsigned short rev[2][512];
 } dec_t;
 
 static double bessel_i0(double x) { double s = 1, t = 1; for (int k = 1; k < 60; k++) { t *= (x / (2 * k)) * (x / (2 * k)); s += t; } return s; }
@@ -67,8 +70,16 @@ static void dec_init(dec_t *D) {
     for (int i = 0; i < 1024; i++) D->wl[0][i] = (float)sin(PI / 2048 * (i + 0.5));
     for (int i = 0; i < 128; i++) D->ws[0][i] = (float)sin(PI / 256 * (i + 0.5));
     kbd(D->wl[1], 1024, 4.0); kbd(D->ws[1], 128, 6.0);
-    for (int i = 0; i < 8192; i++) D->cos_l[i] = (float)cos(2 * PI * i / 8192);
-    for (int i = 0; i < 1024; i++) D->cos_s[i] = (float)cos(2 * PI * i / 1024);
+    for (int t = 0; t < 2; t++) {
+        int M = t ? 128 : 1024, n = M / 2, bits = 0; while ((1 << bits) < n) bits++;
+        for (int k = 0; k < n; k++) {
+            double a = -PI * (4 * k + 1) / (4.0 * M), b = -PI * k / M;
+            D->pre[t][k][0] = (float)cos(a); D->pre[t][k][1] = (float)sin(a); D->post[t][k][0] = (float)cos(b); D->post[t][k][1] = (float)sin(b);
+            int r = 0; for (int j = 0; j < bits; j++) if (k >> j & 1) r |= 1 << (bits - 1 - j);
+            D->rev[t][k] = (unsigned short)r;
+        }
+        for (int j = 0; j < n / 2; j++) { double a = -2 * PI * j / n; D->root[t][j][0] = (float)cos(a); D->root[t][j][1] = (float)sin(a); }
+    }
     for (int i = 0; i < 8192 + 16; i++) D->pow43[i] = (float)pow((double)i, 4.0 / 3.0);
 }
 
@@ -249,19 +260,36 @@ static void tns_apply(chan_t *C, int rate_idx) {
     }
 }
 
-/* ---------- filterbank ---------- */
-static void imdct(dec_t *D, const float *X, int M, float *z) {   /* M coefficients -> 2M samples */
-    int n0x2 = M + 1;                                        /* 2 * n0 */
-    const float *cs = M == 1024 ? D->cos_l : D->cos_s; int mask = M == 1024 ? 8191 : 1023;
-    double sc = 2.0 / (2.0 * M);
-    int lo = M == 1024 ? M / 2 : 0, hi = M == 1024 ? M / 2 + M : 2 * M;     /* long frames: compute the middle half, the rest follows by symmetry */
-    for (int n = lo; n < hi; n++) {
-        double acc = 0; int base = 2 * n + n0x2;
-        for (int k = 0; k < M; k++) acc += X[k] * cs[(base * (2 * k + 1)) & mask];
-        z[n] = (float)(acc * sc);
+/* ---------- filterbank ----------
+ * The inverse MDCT is a DCT-IV of the M coefficients plus index shuffles, and the DCT-IV is an M/2 point complex FFT between two rotations
+ * (the direct sum was M * M multiply-adds per block, which took minutes on a 3DS). */
+static void dct4(const dec_t *D, const float *x, int M, float *y) {
+    int t = M == 1024 ? 0 : 1, n = M / 2; float re[512], im[512];
+    for (int k = 0; k < n; k++) {                                   /* (x[2k] + i x[M-1-2k]) * pre[k], stored bit-reversed for the FFT */
+        float a = x[2 * k], b = x[M - 1 - 2 * k], c = D->pre[t][k][0], s = D->pre[t][k][1]; int r = D->rev[t][k];
+        re[r] = a * c - b * s; im[r] = a * s + b * c;
     }
-    if (M == 1024) {
+    for (int len = 2, step = n / 2; len <= n; len <<= 1, step >>= 1) {
+        for (int i = 0; i < n; i += len) for (int j = 0; j < len / 2; j++) {
+            float wr = D->root[t][j * step][0], wi = D->root[t][j * step][1];
+            int p = i + j, q = p + len / 2;
+            float xr = re[q] * wr - im[q] * wi, xi = re[q] * wi + im[q] * wr;
+            re[q] = re[p] - xr; im[q] = im[p] - xi; re[p] += xr; im[p] += xi;
+        }
+    }
+    for (int k = 0; k < n; k++) {                                   /* times post[k]; real part is the even outputs, minus the imaginary part the mirrored odd ones */
+        float c = D->post[t][k][0], s = D->post[t][k][1];
+        y[2 * k] = re[k] * c - im[k] * s; y[M - 1 - 2 * k] = -(re[k] * s + im[k] * c);
+    }
+}
+static void imdct(dec_t *D, const float *X, int M, float *z) {   /* M coefficients -> 2M samples */
+    float y[1024]; dct4(D, X, M, y);
+    float sc = 1.0f / (float)M;
+    if (M == 1024) {                                         /* long frames: compute the middle half, the rest follows by symmetry */
+        for (int n = M / 2; n < 3 * M / 2; n++) z[n] = -sc * y[3 * M / 2 - 1 - n];
         for (int j = 0; j < M / 2; j++) { z[M / 2 - 1 - j] = -z[M / 2 + j]; z[3 * M / 2 + j] = z[3 * M / 2 - 1 - j]; }
+    } else {
+        for (int n = 0; n < 2 * M; n++) { int m = n + M / 2; z[n] = sc * (m < M ? y[m] : m < 2 * M ? -y[2 * M - 1 - m] : -y[m - 2 * M]); }
     }
 }
 static void synth(dec_t *D, chan_t *C, float *out) {          /* 1024 new samples */
@@ -420,6 +448,7 @@ unsigned char *pnj_aac_decode(const unsigned char *f, size_t size, size_t *out_s
     {
         short *pcm = (short *)(res + 44); float fr[2][1024];
         for (uint32_t i = 0; i < cnt; i++) {
+            if (pnj_aac_progress && (i & 31) == 0) pnj_aac_progress(i, cnt);
             if (off[i] + sz[i] > size) { free(res); res = 0; goto done; }
             if (!decode_frame(D, f + off[i], sz[i], fr) || D->sbr_seen) { free(res); res = 0; goto done; }
             for (int n = 0; n < 1024; n++) for (int c = 0; c < cc; c++) {

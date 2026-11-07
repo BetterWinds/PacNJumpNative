@@ -15,7 +15,8 @@ typedef struct { uint32_t magic; int sfx_on, mus_on; float sfx_vol, mus_vol; int
                  int pad[ACT_N];             /* SDL controller buttons, -1 = none */
                  int touchui;                /* on-screen touch controls: 0 auto (follow the last input device), 1 always, 2 never */
                  int intscale;               /* 0 smooth scaling, 1 whole-number scale with sharp pixels (desktop) */
-                 int hdr;                    /* 0 SDR output, 1 ask for HDR output (desktop; only does anything on an HDR display) */ } save_t;
+                 int hdr;                    /* 0 SDR output, 1 ask for HDR output (desktop; only does anything on an HDR display) */
+                 int ver;                    /* settings revision: 1 = the 3DS defaults to the analog touch pad */ } save_t;
 static save_t SV;
 
 /* The last kind of input the player used. It picks the prompt wording ("TOUCH SCREEN" or "PRESS ANYTHING") and, in AUTO, whether the
@@ -23,7 +24,7 @@ static save_t SV;
 enum { IND_TOUCH, IND_MOUSE, IND_KEY, IND_PAD };
 #if defined(__ANDROID__) || defined(__IPHONEOS__)
 static int in_dev = IND_TOUCH;
-#elif defined(__vita__)
+#elif defined(__vita__) || defined(PNJ_N3DS)
 static int in_dev = IND_PAD;
 #else
 static int in_dev = IND_KEY;
@@ -115,9 +116,20 @@ static void save_load(void) {
     FILE *f = save_path[0] ? fopen(save_path, "rb") : NULL;
     if (f) { save_t t = SV; size_t n = fread(&t, 1, sizeof t, f);                                  /* a shorter (older) file leaves the new fields at their defaults */
              if (n >= offsetof(save_t, orient) && t.magic == 0x504e4a31) { SV = t; if (SV.orient < 0 || SV.orient > 2) SV.orient = 0; } fclose(f); }
+#ifdef PNJ_N3DS
+    if (SV.ver < 1) { SV.analog = 1; SV.ver = 1; }                                                 /* a stylus drag suits the 3DS better than the split digital pad */
+#endif
     save_apply();
 }
 
+/* 3DS: N3C is true while a menu is drawn 1:1 on the touch screen (a window of 240 field rows starting at pnj_menu_win) instead of at half size */
+#ifdef PNJ_N3DS
+#define N3C (pnj_menu_win >= 0)
+#define HISC 1.3            /* the HIGH label is hard to read after the 3DS shrinks the sheet */
+#else
+#define N3C 0
+#define HISC 1.0
+#endif
 /* ---------- drawing helpers ---------- */
 static void sprdst(SDL_Renderer *r, int id, double dx, double dy, double dw, double dh, int rgb) {
     const pnj_sprite *s = spr_at(id);
@@ -138,6 +150,12 @@ static void pill(SDL_Renderer *r, double x, double y, double w, int rgb) {
 static void ftext(SDL_Renderer *r, const char *t, double x, double y, double size, int rgb, int align, double alpha) {
     SDL_Texture *tx = get_tex(r, 2); if (!tx) return;
     double k = (double)TEXW[2] / 512.0, cell = size * 1.15, adv = cell * 0.7, w = strlen(t) * adv;
+#ifdef PNJ_N3DS
+    if (FONTLITE && r->sc < 0.75f) {                                  /* half-size menus use a pre-shrunk font: pick the level closest to the drawn cell size */
+        double dc = cell * r->sc;
+        if (FONTLITE8 && dc < 11.3) { tx = FONTLITE8; k = 0.25; } else if (dc < 22.6) { tx = FONTLITE; k = 0.5; }
+    }
+#endif
     double px = align == 1 ? x : align == 2 ? x - w : x - w / 2, py = y - cell * 0.78;
     SDL_SetTextureBlendMode(tx, SDL_BLENDMODE_BLEND);
     SDL_SetTextureAlphaMod(tx, (Uint8)(alpha < 0 ? 0 : alpha > 1 ? 255 : alpha * 255));
@@ -166,9 +184,9 @@ static void digits_right(SDL_Renderer *r, int v, double xr, double ytop) {
 
 /* ---------- hit regions (rebuilt every frame) ---------- */
 enum { H_NONE, H_TITLE, H_PLAY, H_RECORD, H_OPTION, H_BACK, H_PREV, H_NEXT, H_START, H_SFXT, H_MUST, H_SFXS, H_MUSS, H_CTRL, H_SNAP,
-       H_P_OPTION, H_P_EXIT, H_P_RESUME, H_OVER, H_HELP, H_ACH, H_P_HELP, H_QUIT, H_P_QUIT, H_ORIENT, H_KEYS, H_RESET, H_MATCH, H_TOUCHUI, H_SCALE, H_HDR, H_O_SND, H_O_VID, H_O_CTL, H_FS, H_KEY0 };   /* H_KEY0 + row * 3 + slot: a binding box */
-#if !defined(__ANDROID__) && !defined(__IPHONEOS__) && !defined(__vita__)
-#define PNJ_HAS_QUIT 1      /* desktop only: phones and the Vita quit through the system */
+       H_P_OPTION, H_P_EXIT, H_P_RESUME, H_OVER, H_HELP, H_ACH, H_P_HELP, H_QUIT, H_P_QUIT, H_ORIENT, H_KEYS, H_RESET, H_MATCH, H_TOUCHUI, H_SCALE, H_HDR, H_O_SND, H_O_VID, H_O_CTL, H_FS, H_ABSWAP, H_KEY0 };   /* H_KEY0 + row * 3 + slot: a binding box */
+#if !defined(__ANDROID__) && !defined(__IPHONEOS__) && !defined(__vita__) && !defined(PNJ_N3DS)
+#define PNJ_HAS_QUIT 1      /* desktop only: phones and consoles quit through the system */
 #define PNJ_DESKTOP 1
 #endif
 #ifdef __vita__
@@ -186,7 +204,12 @@ static void btn(SDL_Renderer *r, const char *label, int x, int y, int w, int h, 
     pill(r, x, py, w, disabled ? 0x444444 : fill);
     ftext(r, label, x + w / 2.0, py + 18.5 + size * 0.42, size, disabled ? 0x777777 : 0xffffff, 0, 1);   /* glyph centre = baseline - 0.42 size */
 }
-static void backbtn(SDL_Renderer *r) { SPR(r, 69, 40, 448); hit_add(0, 410, 96, 70, H_BACK); }
+static void backbtn(SDL_Renderer *r) {
+#ifdef PNJ_N3DS
+    if (N3C) { SPR(r, 69, 40, pnj_menu_win + 212); hit_add(0, pnj_menu_win + 182, 96, 58, H_BACK); return; }
+#endif
+    SPR(r, 69, 40, 448); hit_add(0, 410, 96, 70, H_BACK);
+}
 static void slider(SDL_Renderer *r, int x, int y, int w, double val, int on, int id) {
     hit_add(x - 8, y - 14, w + 16, 28, id);
     fill_rect(r, x, y - 3, w, 6, on ? 0x333333 : 0x222222, 255);
@@ -343,7 +366,7 @@ static void draw_menu(SDL_Renderer *r) {
         hit_add(0, 0, PNJ_W, PNJ_H, H_TITLE);
         break; }
     case UI_MENU: {
-        draw_logo(r, 0, 1);
+        if (!N3C) draw_logo(r, 0, 1);                           /* 3DS full-size menu: the logo is on the top screen */
 #ifdef PNJ_HAS_QUIT
         static const char *const items[6] = { "PLAY GAME", "RECORD", "OPTION", "HELP", "ACHIEVEMENTS", "QUIT TO DESKTOP" };
         static const int ids[6] = { H_PLAY, H_RECORD, H_OPTION, H_HELP, H_ACH, H_QUIT };
@@ -363,7 +386,7 @@ static void draw_menu(SDL_Renderer *r) {
         snprintf(b, sizeof b, "STAGE%d", sel_stage + 1); ftext(r, b, 160, 62, 24, 0x9966ff, 0, 1);
         ftext(r, STAGE_NAMES[sel_stage], 160, 100, sel_stage == 6 ? 17 : 22, 0xffffff, 0, 1);
         spr(r, 83 + sel_stage, 0, 0, 0, 160, 210, 0, 1, ready ? 1 : 0.3, 0, 1, 1, 1);
-        SPR(r, 61, 59, 321); digits_right(r, SV.top[sel_stage][0], 240, 305); SPR(r, 59, 268, 330);
+        spr(r, 61, 0, 0, 0, 59, 321, 0, HISC, 1, 0, 1, 1, 1); digits_right(r, SV.top[sel_stage][0], 240, 305); SPR(r, 59, 268, 330);
         SPR(r, 66, 34, 210); hit_add(0, 170, 66, 80, H_PREV);
         SPR(r, 67, 286, 210); hit_add(254, 170, 66, 80, H_NEXT);
         spr(r, 68, 0, 0, 0, 160, 410, 0, 1, ready ? 1 : 0.35, 0, 1, 1, 1); hit_add(92, 372, 136, 76, H_START);
@@ -385,6 +408,13 @@ static void draw_menu(SDL_Renderer *r) {
         break; }
     case UI_OPTION: {                                           /* the hub: pick a group */
         shade(r, scene ? 200 : 155);
+        if (N3C) {
+            ftext(r, "OPTION", 160, 34, 22, 0xffe07a, 0, 1);
+            btn(r, "SOUND", 60, 58, 200, 52, H_O_SND, menu_fill(H_O_SND, 0xb4b4d2), 18, 0);
+            btn(r, "CONTROLS", 60, 122, 200, 52, H_O_CTL, menu_fill(H_O_CTL, 0xb4b4d2), 18, 0);
+            backbtn(r);
+            break;
+        }
         ftext(r, "OPTION", 160, 48, 22, 0xffe07a, 0, 1);
 #ifdef PNJ_HAS_VIDEO
         const int rows = 3;
@@ -456,6 +486,9 @@ static void draw_menu(SDL_Renderer *r) {
 #if defined(PNJ_DESKTOP) || defined(PNJ_VITA)
         btn(r, "KEYS", 60, 340, 200, 44, H_KEYS, menu_fill(H_KEYS, 0xb4b4d2), 13, 0);
 #endif
+#ifdef PNJ_N3DS
+        btn(r, SV.pad[ACT_OK] == SDL_GAMEPAD_BUTTON_EAST ? "B: OK  A: BACK" : "A: OK  B: BACK", 60, 340, 200, 44, H_ABSWAP, menu_fill(H_ABSWAP, 0xb4b4d2), 11, 0);
+#endif
         backbtn(r);
         break; }
     case UI_KEYS: {
@@ -487,7 +520,7 @@ static void draw_menu(SDL_Renderer *r) {
         char b[16]; snprintf(b, sizeof b, "%d", over_score);
         draw_digits(r, over_score, 160 - 10.0 * strlen(b), 215);
         if (over_new) ftext(r, "NEW BEST!", 160, 290, 22, 0xffe07a, 0, 1);
-        else { SPR(r, 61, 100, 300); digits_right(r, SV.top[sel_stage][0], 240, 288); }
+        else { spr(r, 61, 0, 0, 0, 100, 300, 0, HISC, 1, 0, 1, 1, 1); digits_right(r, SV.top[sel_stage][0], 240, 288); }
         if (over_nach) {
             ftext(r, "ACHIEVEMENT UNLOCKED!", 160, 332, 13, 0xffe07a, 0, 1);
             for (int i = 0; i < over_nach && i < 3; i++) { char nb[40]; ach_name(over_ach[i], nb, sizeof nb); ftext(r, nb, 160, 354 + i * 18, 11, 0xffffff, 0, 1); }
@@ -503,18 +536,18 @@ static void draw_menu(SDL_Renderer *r) {
 /* pause overlay, drawn over the game by render() */
 static void draw_pause(SDL_Renderer *r) {
     shade(r, 160);
-    ftext(r, "PAUSE", 160, 130, 30, 0xffffff, 0, 1);
+    ftext(r, "PAUSE", 160, N3C ? 136 : 130, 30, 0xffffff, 0, 1);
 #ifdef PNJ_HAS_QUIT
     enum { Y0 = 180, DY = 40 };
 #else
     enum { Y0 = 195, DY = 45 };
 #endif
-    int y = Y0;
-    btn(r, "HELP", 60, y - 19, 200, 38, H_P_HELP, menu_fill(H_P_HELP, 0xb4b4d2), 16, 0); y += DY;
-    btn(r, "OPTION", 60, y - 19, 200, 38, H_P_OPTION, menu_fill(H_P_OPTION, 0xb4b4d2), 16, 0); y += DY;
-    btn(r, "EXIT", 60, y - 19, 200, 38, H_P_EXIT, menu_fill(H_P_EXIT, 0xb4b4d2), 16, 0); y += DY;
+    int y = N3C ? 182 : Y0; const int dy = N3C ? 42 : DY;
+    btn(r, "HELP", 60, y - 19, 200, 38, H_P_HELP, menu_fill(H_P_HELP, 0xb4b4d2), 16, 0); y += dy;
+    btn(r, "OPTION", 60, y - 19, 200, 38, H_P_OPTION, menu_fill(H_P_OPTION, 0xb4b4d2), 16, 0); y += dy;
+    btn(r, "EXIT", 60, y - 19, 200, 38, H_P_EXIT, menu_fill(H_P_EXIT, 0xb4b4d2), 16, 0); y += dy;
 #ifdef PNJ_HAS_QUIT
-    btn(r, "QUIT TO DESKTOP", 60, y - 19, 200, 38, H_P_QUIT, menu_fill(H_P_QUIT, 0xb4b4d2), 14, 0); y += DY;
+    btn(r, "QUIT TO DESKTOP", 60, y - 19, 200, 38, H_P_QUIT, menu_fill(H_P_QUIT, 0xb4b4d2), 14, 0); y += dy;
 #endif
     btn(r, "RESUME", 60, y - 19, 200, 38, H_P_RESUME, menu_fill(H_P_RESUME, 0xffe07a), 16, 0);
 }
@@ -552,6 +585,7 @@ static void ui_touch(double lx, double ly) {
         case H_P_HELP: audio_play(A_DECIDE); help_back = UI_PLAY; help_page = 0; ui_enter(UI_HELP); break;
         case H_ORIENT: audio_play(A_SELECT); SV.orient = (SV.orient + 1) % 3; orient_dirty = 1; save_write(); break;
         case H_KEYS: audio_play(A_DECIDE); ui_enter(UI_KEYS); break;
+        case H_ABSWAP: { int t = SV.pad[ACT_OK]; SV.pad[ACT_OK] = SV.pad[ACT_BACK]; SV.pad[ACT_BACK] = t; audio_play(A_SELECT); save_write(); break; }       /* A and B trade jobs (3DS) */
         case H_O_SND: audio_play(A_DECIDE); ui_enter(UI_OPT_SOUND); break;
         case H_O_VID: audio_play(A_DECIDE); ui_enter(UI_OPT_VIDEO); break;
         case H_O_CTL: audio_play(A_DECIDE); ui_enter(UI_OPT_CTRL); break;

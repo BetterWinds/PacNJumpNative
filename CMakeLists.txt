@@ -91,6 +91,21 @@ if(VITA)
     FILE ${CMAKE_SOURCE_DIR}/packaging/vita/sce_sys/livearea/contents/startup.png sce_sys/livearea/contents/startup.png
     FILE ${CMAKE_SOURCE_DIR}/packaging/vita/sce_sys/livearea/contents/template.xml sce_sys/livearea/contents/template.xml)
 endif()
+if(NINTENDO_3DS OR CMAKE_SYSTEM_NAME STREQUAL "Nintendo3DS")
+  # Nintendo 3DS (devkitARM + libctru + citro2d): cmake -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake. The result is pacnjump.3dsx for the Homebrew Launcher
+  # or Azahar/Citra. SDL3 supplies audio, files, timers and threads here; drawing and input are in platform/n3ds/n3ds_gfx.h.
+  target_compile_definitions(pacnjump PRIVATE PNJ_N3DS=1)
+  set(PNJ_3DS_TEX_FLIP 0 CACHE STRING "vertical flip in the texture upload copy (0 or 1)")
+  target_compile_definitions(pacnjump PRIVATE PNJ_N3DS_TEX_FLIP=${PNJ_3DS_TEX_FLIP})
+  # OpenDSP (BSD-2-Clause, github.com/Cellenseres/OpenDSP) stands in for the dumped dspfirm.cdc, so sound works without dumping the firmware.
+  # CI builds and installs it into portlibs before this configure runs.
+  target_include_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/include $ENV{DEVKITPRO}/portlibs/3ds/include)
+  target_link_directories(pacnjump PRIVATE $ENV{DEVKITPRO}/libctru/lib $ENV{DEVKITPRO}/portlibs/3ds/lib)
+  target_link_libraries(pacnjump PRIVATE opendsp citro2d citro3d ctru m)
+  ctr_generate_smdh(pacnjump.smdh NAME "Pac'N-Jump" DESCRIPTION "Fan port, bring your own APK" AUTHOR " "
+    ICON ${CMAKE_SOURCE_DIR}/packaging/n3ds/icon.png)
+  ctr_create_3dsx(pacnjump SMDH pacnjump.smdh)
+endif()
 if(WIN32)
   target_link_libraries(pacnjump PRIVATE mfuuid ole32)         # GUID definitions only; Media Foundation itself is loaded at run time (jingle_native.c)
 endif()
