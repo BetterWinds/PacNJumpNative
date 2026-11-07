@@ -27,18 +27,40 @@ ls -la out
   # no game data on a CI disc: the game shows its "game data not found" screen
   $M --no-banner -v 2 -m -N -e /work/out/pacnjump.elf -n "Pac'N-Jump" -a "Jon Anderson" -o /work/out/pacnjump-nodata.cdi >>"$L" 2>&1
   ls -la /work/out >>"$L" 2>&1
-  # layout probe for the pack patcher: the same disc with a 1 MB and a 3 MB stand-in pack (the pack is the last file)
-  head -c 1048576 /dev/urandom >p1.pack; head -c 3145728 /dev/urandom >p3.pack
+  # ---- the disc template for the web builder (web/dc_disc.js) ----
+  # The whole disc is built around a stand-in PNJ.PACK of a fixed size (16 MiB, room for the real pack with some to spare). The browser swaps in the real pack's sectors and redoes their EDC/ECC.
+  # Each stand-in sector starts with a marker, so the script below can find where the file landed in the image and write that down (pacnjump-dc.json).
+  SLOT=16777216
+  python3 - "$SLOT" <<'PY' >>"$L" 2>&1
+import sys, struct, os
+n = int(sys.argv[1]); os.makedirs('/tmp/probe/dt', exist_ok=True); os.makedirs('/tmp/probe/dr', exist_ok=True)
+with open('/tmp/probe/dt/PNJ.PACK', 'wb') as f:
+    for k in range(n // 2048): f.write((b'PNJSLOT\0' + struct.pack('<I', k)).ljust(2048, b'\0'))
+with open('/tmp/probe/dr/PNJ.PACK', 'wb') as f: f.write(os.urandom(n - 777))     # random and a little short of the slot: the check disc
+PY
   echo "/PNJ.PACK -100" >sort.txt
-  for n in 1 3; do
-    mkdir -p d$n; cp p$n.pack d$n/PNJ.PACK
-    $M --no-banner -v 3 -m -e /work/out/pacnjump.elf -D d$n -S sort.txt -N -n "Pac'N-Jump" -a "Jon Anderson" -r 20261106 -o probe$n.cdi >>"$L" 2>&1
+  for d in dt dr; do
+    $M --no-banner -v 2 -m -e /work/out/pacnjump.elf -D /tmp/probe/$d -S sort.txt -N -n "Pac'N-Jump" -a "Jon Anderson" -r 20261106 -o /tmp/probe/$d.cdi >>"$L" 2>&1
   done
-  ls -la >>"$L" 2>&1
-  echo "== diff of the two probes (byte offsets that differ, first 40)" >>"$L"
-  cmp -l probe1.cdi probe3.cdi 2>&1 | wc -l >>"$L"
-  cmp -l probe1.cdi probe3.cdi 2>&1 | head -40 | awk '{printf "%d ", $1-1}' >>"$L"
-  echo "== SRC LISTING" >>"$L"
-  (cd /tmp/mkdcdisc && git log --oneline -1; find . -path ./build -prune -o -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' -o -name '*.md' -o -name 'meson.build' \) -print | xargs wc -l | sort -k2) >>"$L" 2>&1
+  cp /tmp/probe/dt.cdi /work/out/pacnjump-dc.cdi
+  python3 - "$SLOT" <<'PY' >>"$L" 2>&1
+import sys, json, struct
+n = int(sys.argv[1]) // 2048
+d = open('/tmp/probe/dt.cdi', 'rb').read()
+m0 = b'PNJSLOT\0' + struct.pack('<I', 0); m1 = b'PNJSLOT\0' + struct.pack('<I', 1); mL = b'PNJSLOT\0' + struct.pack('<I', n - 1)
+o0 = d.find(m0); o1 = d.find(m1); oL = d.find(mL)
+assert o0 > 0 and o1 > o0 and d.count(m0) == 1, (o0, o1)
+stride = o1 - o0
+assert oL == o0 + (n - 1) * stride, (oL, o0, stride, n)
+pre = {2336: 8, 2352: 24, 2048: 0}[stride]
+man = {'file': 'pacnjump-dc.cdi', 'size': len(d), 'slot': {'offset': o0 - pre, 'stride': stride, 'pre': pre, 'sectors': n}}
+json.dump(man, open('/work/out/pacnjump-dc.json', 'w'))
+print('manifest', man)
+PY
+  ls -la /tmp/probe /work/out >>"$L" 2>&1
+  # the check: the browser code patching the template with the random pack must give mkdcdisc's own image of that pack
+  apk add --no-cache nodejs >>"$L" 2>&1
+  echo "== JS patcher vs mkdcdisc" >>"$L"
+  node /work/web/test_dcdisc.mjs /tmp/probe/dt.cdi /work/out/pacnjump-dc.json /tmp/probe/dr/PNJ.PACK /tmp/probe/dr.cdi >>"$L" 2>&1
+  echo "check exit: $?" >>"$L"
 ) || true
-
