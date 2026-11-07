@@ -1,6 +1,6 @@
 # Pac'N-Jump native
 
-A port of Pac'N-Jump (Namco, 2011), a mobile game that was pulled from the stores. Portable C99 core, SDL3 shell. Runs on Android, Windows, macOS and Linux. All 8 stages, menus, help and achievements are in.
+A port of Pac'N-Jump (Namco, 2011), a mobile game that was pulled from the stores. Portable C99 core, SDL3 shell. Runs on Android, Windows, macOS, Linux, Nintendo 3DS, PS Vita and Sega Dreamcast. All 8 stages, menus, help and achievements are in.
 
 **This repo has none of the original game's art, sound or level data.** The game reads all of it from a `pnj.pack` file at run time. The game builds that file from your own copy of the original Android APK (`com.namcobandaigames.pacnjump_and.apk`), so you need to bring the APK.
 
@@ -12,7 +12,11 @@ A port of Pac'N-Jump (Namco, 2011), a mobile game that was pulled from the store
 
 **Android, import on the phone:** `android\package.bat byo` builds an APK with no game data in it. Install it and pick the original APK on first launch.
 
-**Dreamcast (work in progress):** open `dreamcast.html` on the same page, drop your original APK and download `PacNJump.cdi`. It takes a minute or two and nothing is uploaded. Run it in Flycast, from a disc emulator, or burn it as an Audio/Data (MIL-CD style) image. It has been tested on a real console, not yet on a burned disc. The page needs the disc template that the Dreamcast build makes, so it only works once that build has run.
+**Nintendo 3DS:** install `pacnjump.cia` (FBI or similar) to get a Home menu icon, or run `pacnjump.3dsx` from the Homebrew Launcher. Copy your APK onto the SD card as the game's first screen shows and it imports on the console, which takes a few minutes the first time.
+
+**PS Vita:** install `pacnjump.vpk` with VitaShell, launch the game once, then copy your APK into `ux0:data/jon/pnj/`. The game finds it and imports it by itself, which takes up to a minute the first time. Options > Video has tate for holding the Vita on its side, and either stick steers.
+
+**Dreamcast:** open `dreamcast.html` on the same page, drop your original APK and download `PacNJump.cdi`. It takes a minute or two and nothing is uploaded. Run it in Flycast, from a disc emulator, or burn it as an Audio/Data (MIL-CD style) image. It has been tested on a real console, not on a burned disc. The page needs the disc template that the Dreamcast build makes, so it only works once that build has run.
 
 **From source:** see Building below.
 
@@ -115,17 +119,17 @@ No art, sound, level data, sprite table or Help text. What is in the repo is the
 
 ## Roadmap
 
-**Now: a public release.** Windows, macOS, Linux and Android are the supported builds. The work left is testing on real hardware (Linux, macOS HDR, handhelds) and release notes. No new platforms until that is out.
+**Now: 0.9.0, then testing.** Android, Windows, macOS, Linux, Nintendo 3DS, PS Vita and Sega Dreamcast are in the release. The work left is testing on more hardware (the original 3DS and 2DS, Steam Deck, PAL Dreamcasts, macOS HDR) and getting to a 1.0.
 
 **Later, on the current platforms:** Windows code signing (see below), language select (the pack already carries every language file), tilt input (the original was tilt-controlled), foldable and two-screen Android phones, a 32-bit Android build.
 
 **Planned for every version:** true analog stick control. Today the stick is read as a digital direction (d-pad style) on the platforms that have one, and the on-screen pad has an analog-style mode that is a touch drag. The plan is to feed the stick's real deflection into the core's input model so a gentle push steers gently, on desktop gamepads, the Vita, the 3DS circle pad and anything else with a stick.
 
-**Ports in progress (branches, not in the release).** Each one merges into `main` after it passes on real hardware.
+**Console ports.**
 
 | Platform | Branch | State |
 | --- | --- | --- |
-| PS Vita | `vita` | Runs in Vita3K, tate included. Real Vita test pending. |
+| PS Vita | `vita` | Tested on a real Vita, tate included. |
 | Nintendo 3DS | `3ds` | Plays on a New 3DS XL with sound and stereo 3D, uses both screens for menus and the import, imports your APK on the console, closes cleanly, and builds a `.cia` for the Home menu. Open: an icon that matches the Android app's (the repo can't hold that art, so it would have to come from the player's own APK or be a close redraw), old 3DS testing. |
 | Dreamcast | `dreamcast` | Builds one CDI from your APK in the browser. Works on a real console in progressive and interlaced video on CRTs, with sound, loading screens, 60 fps and tate. Scores and preferences save to the VMU (about 1 block). Open: PAL support. The game steps at 60 per second, so a 50 Hz console needs a timing change that keeps the game speed the same. Burned discs are untested. |
 

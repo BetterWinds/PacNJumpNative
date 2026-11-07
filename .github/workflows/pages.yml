@@ -8,7 +8,7 @@ on:
   workflow_run:                       # a new Dreamcast build means a new disc template for the Dreamcast page
     workflows: [Dreamcast]
     types: [completed]
-    branches: [dreamcast]
+    branches: [dreamcast, main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -62,7 +62,8 @@ jobs:
       - name: Dreamcast disc template (from the latest successful Dreamcast build, if there is one)
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
-          id=$(gh run list -R "$GITHUB_REPOSITORY" -w Dreamcast -b dreamcast -s success -L 1 --json databaseId -q '.[0].databaseId' || true)
+          id=$(gh run list -R "$GITHUB_REPOSITORY" -w Dreamcast -b main -s success -L 1 --json databaseId -q '.[0].databaseId' || true)
+          [ -n "$id" ] || id=$(gh run list -R "$GITHUB_REPOSITORY" -w Dreamcast -b dreamcast -s success -L 1 --json databaseId -q '.[0].databaseId' || true)
           if [ -n "$id" ]; then
             mkdir -p /tmp/dc web/dc
             gh run download "$id" -R "$GITHUB_REPOSITORY" -p 'pacnjump-dc-*' -D /tmp/dc || true

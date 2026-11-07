@@ -2,7 +2,7 @@
 name: Dreamcast
 on:
   push:
-    branches: ['dreamcast']
+    branches: ['dreamcast', main]
     paths-ignore: ['web/**', 'android/**', '*.md']
   workflow_dispatch:
 permissions:

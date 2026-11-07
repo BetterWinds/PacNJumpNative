@@ -99,6 +99,7 @@ jobs:
     needs: [linux, windows, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { path: dl, merge-multiple: true }
       - name: Check the release files hold no game data
@@ -113,8 +114,5 @@ jobs:
           done
       - uses: softprops/action-gh-release@v2
         with:
-          body: |
-            Desktop builds. Unzip, run, then drag your own Pac'N-Jump Android APK onto the window once.
-
-            **macOS:** the app is not signed, so the first launch is blocked. On macOS 15 and later: double-click it, click Done, open System Settings > Privacy & Security, scroll to Security, click Open Anyway, enter your password, click Open. On macOS 14 and earlier: right-click the app, Open, Open. If macOS says the app is damaged, run `xattr -cr PacNJump.app` in Terminal. Details are in the README inside the zip.
+          body_path: RELEASE_NOTES.md
           files: dl/*

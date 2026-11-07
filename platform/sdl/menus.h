@@ -427,17 +427,19 @@ static void draw_menu(SDL_Renderer *r) {
             break;
         }
         ftext(r, "OPTION", 160, 48, 22, 0xffe07a, 0, 1);
-#ifdef PNJ_HAS_VIDEO
+#if defined(PNJ_HAS_VIDEO) && !defined(PNJ_DC)
         const int rows = 3;
 #else
-        const int rows = 2;
+        const int rows = 2;                                     /* the Dreamcast has no touch screen, so its Controls page (virtual pad, touch UI) is left out */
 #endif
         int y = rows == 3 ? 120 : 150;
         btn(r, "SOUND", 60, y, 200, 56, H_O_SND, menu_fill(H_O_SND, 0xb4b4d2), 18, 0); y += 80;
 #ifdef PNJ_HAS_VIDEO
         btn(r, "VIDEO", 60, y, 200, 56, H_O_VID, menu_fill(H_O_VID, 0xb4b4d2), 18, 0); y += 80;
 #endif
+#ifndef PNJ_DC
         btn(r, "CONTROLS", 60, y, 200, 56, H_O_CTL, menu_fill(H_O_CTL, 0xb4b4d2), 18, 0);
+#endif
         backbtn(r);
         break; }
     case UI_OPT_SOUND: {
