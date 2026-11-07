@@ -77,6 +77,20 @@ else()
   endif()
 endif()
 target_link_libraries(pacnjump PRIVATE ${PNJ_SDL_LIBS})
+if(VITA)
+  # PlayStation Vita (VitaSDK): cmake -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake. The result is a .vpk for VitaShell or Vita3K.
+  # SDL3 brings its own GXM renderer and the system stubs it needs through SDL3::SDL3-static.
+  include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
+  set(PNJ_VITA_TITLEID "PNJN00001")
+  vita_create_self(pacnjump.self pacnjump UNSAFE)
+  vita_create_vpk(pacnjump.vpk ${PNJ_VITA_TITLEID} pacnjump.self
+    VERSION 00.10
+    NAME "Pac'N-Jump"
+    FILE ${CMAKE_SOURCE_DIR}/packaging/vita/sce_sys/icon0.png sce_sys/icon0.png
+    FILE ${CMAKE_SOURCE_DIR}/packaging/vita/sce_sys/livearea/contents/bg0.png sce_sys/livearea/contents/bg0.png
+    FILE ${CMAKE_SOURCE_DIR}/packaging/vita/sce_sys/livearea/contents/startup.png sce_sys/livearea/contents/startup.png
+    FILE ${CMAKE_SOURCE_DIR}/packaging/vita/sce_sys/livearea/contents/template.xml sce_sys/livearea/contents/template.xml)
+endif()
 if(WIN32)
   target_link_libraries(pacnjump PRIVATE mfuuid ole32)         # GUID definitions only; Media Foundation itself is loaded at run time (jingle_native.c)
 endif()

@@ -20,6 +20,7 @@ static sfx_buf SFXB[32];
 static voice voices[16];
 static unsigned char *mus_data; static stb_vorbis *mus_vb; static char mus_name[32], mus_want[32];
 static short *mus_pcm; static Uint32 mus_frames, mus_pos;      /* a track stored as WAV (the web builder decodes the AAC jingle to this) */
+static short *wav_pcm; static Uint32 wav_frames; static char wav_name[32]; static int mus_cached;   /* the WAV track (the power-up jingle) is converted once at start, so switching to it later costs nothing */
 static int sfx_on = 1, mus_on = 1;
 static float mus_vol = 0.55f, sfx_vol = 0.8f;
 
@@ -58,7 +59,7 @@ static void audio_load_sfx(int slot, const char *file) {
 
 static void audio_music_close(void) {
     if (mus_vb) { stb_vorbis_close(mus_vb); mus_vb = 0; }
-    free(mus_data); mus_data = 0; SDL_free(mus_pcm); mus_pcm = 0; mus_frames = mus_pos = 0; mus_name[0] = 0;
+    free(mus_data); mus_data = 0; if (!mus_cached) SDL_free(mus_pcm); mus_pcm = 0; mus_cached = 0; mus_frames = mus_pos = 0; mus_name[0] = 0;
 }
 /* a track is audio/<name>.ogg, or audio/<name>.wav. If it is not in the pack the current music keeps playing. */
 static void audio_music_open(const char *track) {     /* main thread only; audio is locked by the caller */
@@ -70,11 +71,25 @@ static void audio_music_open(const char *track) {     /* main thread only; audio
         if (!vb) { free(d); return; }
         audio_music_close(); mus_data = d; mus_vb = vb; snprintf(mus_name, sizeof mus_name, "%s", track); return;
     }
+    if (wav_pcm && !strcmp(track, wav_name)) {            /* converted at start: just switch to it */
+        audio_music_close(); mus_pcm = wav_pcm; mus_frames = wav_frames; mus_cached = 1; mus_pos = 0; snprintf(mus_name, sizeof mus_name, "%s", track); return;
+    }
     snprintf(name, sizeof name, "audio/%s.wav", track);
     d = read_asset(name, &n); if (!d) return;
     SDL_AudioSpec sp, dst = { SDL_AUDIO_S16, 2, 44100 }; Uint8 *buf = 0, *cb = 0; Uint32 len = 0; int cl = 0;
     if (SDL_LoadWAV_IO(SDL_IOFromConstMem(d, n), true, &sp, &buf, &len) && len > 0 && SDL_ConvertAudioSamples(&sp, buf, (int)len, &dst, &cb, &cl) && cl >= 4) {
         audio_music_close(); mus_pcm = (short *)cb; mus_frames = (Uint32)cl / 4; mus_pos = 0; snprintf(mus_name, sizeof mus_name, "%s", track);
+    } else SDL_free(cb);
+    if (buf) SDL_free(buf);
+    free(d);
+}
+/* Reading the jingle out of the pack and resampling it to 44.1 kHz took long enough on the Vita to be felt the moment a power pellet was eaten. Do it once, before play. */
+static void audio_wav_preload(const char *track) {
+    char name[64]; size_t n; snprintf(name, sizeof name, "audio/%s.wav", track);
+    unsigned char *d = read_asset(name, &n); if (!d) return;
+    SDL_AudioSpec sp, dst = { SDL_AUDIO_S16, 2, 44100 }; Uint8 *buf = 0, *cb = 0; Uint32 len = 0; int cl = 0;
+    if (SDL_LoadWAV_IO(SDL_IOFromConstMem(d, n), true, &sp, &buf, &len) && len > 0 && SDL_ConvertAudioSamples(&sp, buf, (int)len, &dst, &cb, &cl) && cl >= 4) {
+        wav_pcm = (short *)cb; wav_frames = (Uint32)cl / 4; snprintf(wav_name, sizeof wav_name, "%s", track);
     } else SDL_free(cb);
     if (buf) SDL_free(buf);
     free(d);
@@ -138,6 +153,7 @@ static void audio_init(void) {
     if (!aud_stream) return;
     aud_dev = SDL_GetAudioStreamDevice(aud_stream);
     audio_load_all();
+    audio_wav_preload("wakawaka");
     SDL_ResumeAudioStreamDevice(aud_stream);
 }
 

@@ -23,6 +23,8 @@ static save_t SV;
 enum { IND_TOUCH, IND_MOUSE, IND_KEY, IND_PAD };
 #if defined(__ANDROID__) || defined(__IPHONEOS__)
 static int in_dev = IND_TOUCH;
+#elif defined(__vita__)
+static int in_dev = IND_PAD;
 #else
 static int in_dev = IND_KEY;
 #endif
@@ -43,7 +45,12 @@ static void ctl_match_screen(save_t *s, int orient) {
     /* screen directions 0 up, 1 down, 2 left, 3 right; game LEFT, RIGHT, UP, DOWN take: */
     static const int right_turn[4] = { 0, 1, 3, 2 }, left_turn[4] = { 1, 0, 2, 3 };
     const int *m = orient == 2 ? right_turn : left_turn;
-    for (int a = 0; a < 4; a++) { s->key[a][0] = uk[m[a]]; s->key[a][1] = wk[m[a]]; s->pad[a] = up[m[a]]; }
+    for (int a = 0; a < 4; a++) {
+        s->key[a][0] = uk[m[a]]; s->key[a][1] = wk[m[a]];
+#ifndef __vita__
+        s->pad[a] = up[m[a]];                       /* on the Vita the built-in pad is turned for you (act_of_pad) */
+#endif
+    }
 }
 static const char *orient_name(int o) { return o == 1 ? "TATE LEFT" : o == 2 ? "TATE RIGHT" : "STANDARD"; }
 static int act_of_key(int k) {
@@ -53,7 +60,18 @@ static int act_of_key(int k) {
     for (int a = 0; a < ACT_N; a++) if (SV.key[a][0] == k || SV.key[a][1] == k) return a;
     return -1;
 }
-static int act_of_pad(int b) { for (int a = 0; a < ACT_N; a++) if (SV.pad[a] == b) return a; return -1; }
+static int act_of_pad_raw(int b) { for (int a = 0; a < ACT_N; a++) if (SV.pad[a] == b) return a; return -1; }
+static int act_of_pad(int b) {
+#ifdef __vita__
+    /* the Vita's own D-pad turns with the console: with the picture turned, press the way the game moves on the turned screen.
+       Index 0 up, 1 down, 2 left, 3 right (the order of SDL_GAMEPAD_BUTTON_DPAD_*). */
+    if (SV.orient && b >= SDL_GAMEPAD_BUTTON_DPAD_UP && b <= SDL_GAMEPAD_BUTTON_DPAD_RIGHT) {
+        static const int tl[4] = { 3, 2, 0, 1 }, tr[4] = { 2, 3, 1, 0 };           /* picture turned left / right */
+        b = SDL_GAMEPAD_BUTTON_DPAD_UP + (SV.orient == 2 ? tr : tl)[b - SDL_GAMEPAD_BUTTON_DPAD_UP];
+    }
+#endif
+    return act_of_pad_raw(b);
+}
 static int act_held(int a) {                              /* any key bound to the action is down right now */
     const bool *st = SDL_GetKeyboardState(NULL);
     for (int i = 0; i < 2; i++) if (SV.key[a][i]) { SDL_Scancode sc = SDL_GetScancodeFromKey((SDL_Keycode)SV.key[a][i], NULL); if (sc != SDL_SCANCODE_UNKNOWN && st[sc]) return 1; }
@@ -149,9 +167,15 @@ static void digits_right(SDL_Renderer *r, int v, double xr, double ytop) {
 /* ---------- hit regions (rebuilt every frame) ---------- */
 enum { H_NONE, H_TITLE, H_PLAY, H_RECORD, H_OPTION, H_BACK, H_PREV, H_NEXT, H_START, H_SFXT, H_MUST, H_SFXS, H_MUSS, H_CTRL, H_SNAP,
        H_P_OPTION, H_P_EXIT, H_P_RESUME, H_OVER, H_HELP, H_ACH, H_P_HELP, H_QUIT, H_P_QUIT, H_ORIENT, H_KEYS, H_RESET, H_MATCH, H_TOUCHUI, H_SCALE, H_HDR, H_O_SND, H_O_VID, H_O_CTL, H_FS, H_KEY0 };   /* H_KEY0 + row * 3 + slot: a binding box */
-#if !defined(__ANDROID__) && !defined(__IPHONEOS__)
-#define PNJ_HAS_QUIT 1      /* desktop only: phones quit through the system */
+#if !defined(__ANDROID__) && !defined(__IPHONEOS__) && !defined(__vita__)
+#define PNJ_HAS_QUIT 1      /* desktop only: phones and the Vita quit through the system */
 #define PNJ_DESKTOP 1
+#endif
+#ifdef __vita__
+#define PNJ_VITA 1
+#endif
+#if defined(PNJ_DESKTOP) || defined(PNJ_VITA)
+#define PNJ_HAS_VIDEO 1     /* the Video screen: desktop has fullscreen, rotation, scale and HDR; the Vita has rotation and scale */
 #endif
 typedef struct { int x, y, w, h, id; } hit_t;
 static hit_t hits[40]; static int nhits;
@@ -362,14 +386,14 @@ static void draw_menu(SDL_Renderer *r) {
     case UI_OPTION: {                                           /* the hub: pick a group */
         shade(r, scene ? 200 : 155);
         ftext(r, "OPTION", 160, 48, 22, 0xffe07a, 0, 1);
-#ifdef PNJ_DESKTOP
+#ifdef PNJ_HAS_VIDEO
         const int rows = 3;
 #else
         const int rows = 2;
 #endif
         int y = rows == 3 ? 120 : 150;
         btn(r, "SOUND", 60, y, 200, 56, H_O_SND, menu_fill(H_O_SND, 0xb4b4d2), 18, 0); y += 80;
-#ifdef PNJ_DESKTOP
+#ifdef PNJ_HAS_VIDEO
         btn(r, "VIDEO", 60, y, 200, 56, H_O_VID, menu_fill(H_O_VID, 0xb4b4d2), 18, 0); y += 80;
 #endif
         btn(r, "CONTROLS", 60, y, 200, 56, H_O_CTL, menu_fill(H_O_CTL, 0xb4b4d2), 18, 0);
@@ -389,21 +413,29 @@ static void draw_menu(SDL_Renderer *r) {
     case UI_OPT_VIDEO: {                                        /* desktop only; the hub has no entry for it elsewhere */
         shade(r, scene ? 200 : 155);
         ftext(r, "VIDEO", 160, 48, 22, 0xffe07a, 0, 1);
+#ifdef PNJ_HAS_VIDEO
+        int vy = 98;
 #ifdef PNJ_DESKTOP
-        ftext(r, "FULLSCREEN", 20, 119, 11, row_rgb(H_FS, 0xaaaaaa), 1, 1);
-        btn(r, fs_state ? "ON" : "OFF", 150, 98, 164, 38, H_FS, fs_state ? 0xffe07a : menu_fill(H_FS, 0xb4b4d2), 12, 0);
-        ftext(r, "SCREEN", 20, 169, 11, row_rgb(H_ORIENT, 0xaaaaaa), 1, 1);
-        ftext(r, "ROTATION", 20, 187, 11, row_rgb(H_ORIENT, 0xaaaaaa), 1, 1);
-        btn(r, orient_name(SV.orient), 150, 158, 164, 38, H_ORIENT, menu_fill(H_ORIENT, 0xb4b4d2), 12, 0);
-        ftext(r, "SCALE", 20, 239, 11, row_rgb(H_SCALE, 0xaaaaaa), 1, 1);
-        btn(r, SV.intscale ? "INT SCALE" : "SMOOTH", 150, 218, 164, 38, H_SCALE, menu_fill(H_SCALE, 0xb4b4d2), 12, 0);
-        ftext(r, "HDR", 20, 299, 11, row_rgb(H_HDR, 0xaaaaaa), 1, 1);
-        btn(r, SV.hdr ? "ON" : "OFF", 150, 278, 164, 38, H_HDR, SV.hdr ? 0xffe07a : menu_fill(H_HDR, 0xb4b4d2), 12, 0);
+        ftext(r, "FULLSCREEN", 20, vy + 21, 11, row_rgb(H_FS, 0xaaaaaa), 1, 1);
+        btn(r, fs_state ? "ON" : "OFF", 150, vy, 164, 38, H_FS, fs_state ? 0xffe07a : menu_fill(H_FS, 0xb4b4d2), 12, 0);
+        vy += 60;
+#endif
+        ftext(r, "SCREEN", 20, vy + 11, 11, row_rgb(H_ORIENT, 0xaaaaaa), 1, 1);
+        ftext(r, "ROTATION", 20, vy + 29, 11, row_rgb(H_ORIENT, 0xaaaaaa), 1, 1);
+        btn(r, orient_name(SV.orient), 150, vy, 164, 38, H_ORIENT, menu_fill(H_ORIENT, 0xb4b4d2), 12, 0);
+        vy += 60;
+        ftext(r, "SCALE", 20, vy + 21, 11, row_rgb(H_SCALE, 0xaaaaaa), 1, 1);
+        btn(r, SV.intscale ? "INT SCALE" : "SMOOTH", 150, vy, 164, 38, H_SCALE, menu_fill(H_SCALE, 0xb4b4d2), 12, 0);
+        vy += 60;
+#ifdef PNJ_DESKTOP
+        ftext(r, "HDR", 20, vy + 21, 11, row_rgb(H_HDR, 0xaaaaaa), 1, 1);
+        btn(r, SV.hdr ? "ON" : "OFF", 150, vy, 164, 38, H_HDR, SV.hdr ? 0xffe07a : menu_fill(H_HDR, 0xb4b4d2), 12, 0);
         { char hb[40];
           if (!SV.hdr) snprintf(hb, sizeof hb, "SDR OUTPUT");
           else if (hdr_active) snprintf(hb, sizeof hb, "ACTIVE. PEAK X%.1f", (double)hdr_headroom);
           else snprintf(hb, sizeof hb, "NO HDR DISPLAY FOUND");
-          ftext(r, hb, 232, 333, 8, 0xcccccc, 0, 1); }
+          ftext(r, hb, 232, vy + 55, 8, 0xcccccc, 0, 1); }
+#endif
 #endif
         backbtn(r);
         break; }
@@ -421,7 +453,7 @@ static void draw_menu(SDL_Renderer *r) {
             btn(r, SV.snappy ? "ON" : "OFF", 14, 262, 70, 38, H_SNAP, SV.snappy ? 0xffe07a : 0x777777, 13, 0);
             ftext(r, "SNAPPY DIGITAL RESPONSE", 96, 285, 10, row_rgb(H_SNAP, 0xffffff), 1, 1);
         }
-#ifdef PNJ_DESKTOP
+#if defined(PNJ_DESKTOP) || defined(PNJ_VITA)
         btn(r, "KEYS", 60, 340, 200, 44, H_KEYS, menu_fill(H_KEYS, 0xb4b4d2), 13, 0);
 #endif
         backbtn(r);

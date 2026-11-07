@@ -1,0 +1,29 @@
+# Builds the PlayStation Vita port (.vpk) with VitaSDK. Works on the vita branch and on tags; the vpk contains no game data.
+name: Vita
+on:
+  push:
+    branches: [vita]
+    paths-ignore: ['web/**', 'android/**', '*.md']
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  vita:
+    runs-on: ubuntu-latest
+    container: vitasdk/vitasdk:latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Version
+        run: |
+          if [ "${{ github.ref_type }}" = tag ]; then v="${{ github.ref_name }}"; else v="b${{ github.run_number }}-$(echo ${{ github.sha }} | cut -c1-7)"; fi
+          echo "PNJ_VERSION=$v" >> "$GITHUB_ENV"
+      - name: Build
+        run: |
+          export VITASDK=${VITASDK:-/usr/local/vitasdk}
+          export PATH=$VITASDK/bin:$PATH
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DPNJ_VERSION=$PNJ_VERSION
+          cmake --build build
+      - uses: actions/upload-artifact@v4
+        with: { name: "pacnjump-vita-${{ env.PNJ_VERSION }}", path: build/pacnjump.vpk }
