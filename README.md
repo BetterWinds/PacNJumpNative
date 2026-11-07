@@ -27,7 +27,7 @@ You need the Android version of the game, a file called `com.namcobandaigames.pa
 | [Linux and Steam Deck](#linux-and-steam-deck) | [`pacnjump-linux-x64.tar.gz`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | 64-bit Linux |
 | [Nintendo 3DS](#nintendo-3ds) | [`pacnjump.cia`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | A 3DS with custom firmware |
 | [PS Vita](#ps-vita) | [`pacnjump.vpk`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | A Vita with custom firmware |
-| [Sega Dreamcast](#sega-dreamcast) | The [Dreamcast page](https://heyjonanderson.github.io/PacNJumpNative/dreamcast.html) builds a disc image from your APK | An emulator, or a disc emulator on a real console |
+| [Sega Dreamcast](#sega-dreamcast) | The [Dreamcast page](https://heyjonanderson.github.io/PacNJumpNative/dreamcast.html) builds a disc image from your APK | Works on an emulator, or an ODE on a real console. Untested on burned disc, but should work! |
 
 The downloads are all on the [latest release](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) page, under Assets.
 
