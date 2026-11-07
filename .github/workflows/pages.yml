@@ -5,9 +5,14 @@ on:
   push:
     branches: [main, sdl3]
     paths: ['web/**', 'android/**', 'core/**', 'platform/**', 'third_party/**', 'CMakeLists.txt', '.github/workflows/pages.yml']
+  workflow_run:                       # a new Dreamcast build means a new disc template for the Dreamcast page
+    workflows: [Dreamcast]
+    types: [completed]
+    branches: [dreamcast]
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 concurrency:
@@ -54,6 +59,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { name: template-apk, path: web }
+      - name: Dreamcast disc template (from the latest successful Dreamcast build, if there is one)
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          id=$(gh run list -R "$GITHUB_REPOSITORY" -w Dreamcast -b dreamcast -s success -L 1 --json databaseId -q '.[0].databaseId' || true)
+          if [ -n "$id" ]; then
+            mkdir -p /tmp/dc web/dc
+            gh run download "$id" -R "$GITHUB_REPOSITORY" -p 'pacnjump-dc-*' -D /tmp/dc || true
+            cdi=$(find /tmp/dc -name pacnjump-dc.cdi | head -1); js=$(find /tmp/dc -name pacnjump-dc.json | head -1)
+            if [ -n "$cdi" ] && [ -n "$js" ]; then cp "$cdi" web/dc/pacnjump-dc.cdi; cp "$js" web/dc/pacnjump-dc.json; ls -la web/dc; else echo "no Dreamcast template in that run"; fi
+          else echo "no successful Dreamcast build yet"; fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pac'N-Jump for Dreamcast: build your disc image</title>
+<style>
+  :root { --bg:#10131c; --card:#181d2b; --line:#2a3148; --text:#e8ebf4; --dim:#9aa3bd; --accent:#ffd60a; --ok:#5fd38d; --bad:#ff6b6b; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f4f5f9; --card:#fff; --line:#d8dce8; --text:#171b28; --dim:#5b6480; --accent:#b8860b; --ok:#1a8f4a; --bad:#c62828; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:26px; margin:0 0 8px; }
+  h2 { font-size:17px; margin:32px 0 8px; }
+  p { margin:8px 0; color:var(--dim); }
+  a { color:var(--accent); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin-top:20px; }
+  #drop { border:2px dashed var(--line); border-radius:12px; padding:36px 16px; text-align:center; cursor:pointer; color:var(--dim); }
+  #drop.over { border-color:var(--accent); color:var(--text); }
+  #drop strong { color:var(--text); display:block; font-size:18px; margin-bottom:4px; }
+  input[type=file] { display:none; }
+  ul.log { list-style:none; margin:16px 0 0; padding:0; color:var(--dim); font-size:15px; }
+  ul.log li::before { content:"\2713  "; color:var(--ok); }
+  #bar { height:8px; background:var(--line); border-radius:4px; margin-top:16px; overflow:hidden; display:none; }
+  #bar i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
+  #msg { margin-top:12px; min-height:1.5em; }
+  #msg.err { color:var(--bad); }
+  a.btn { display:inline-block; background:var(--accent); color:#1a1400; border-radius:8px; padding:12px 20px; font-weight:600; text-decoration:none; margin-top:12px; }
+  a.btn[hidden] { display:none; }
+  ol { color:var(--dim); padding-left:22px; } ol li { margin:6px 0; }
+  code { font-family:ui-monospace,Menlo,Consolas,monospace; background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:1px 5px; font-size:14px; }
+  .note { border-left:3px solid var(--accent); padding:2px 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pac'N-Jump for Dreamcast</h1>
+  <p>The 2011 game was pulled from the stores. This is a rebuilt version for the Sega Dreamcast. It ships with none of the original art or sound: you give this page your own copy of the original Android APK and it hands back one disc image with the game and your data on it. One image, one disc, nothing to import on the console.</p>
+  <p>Everything happens in your browser. Your APK is not uploaded anywhere.</p>
+  <p class="note">Work in progress. It runs in the Flycast emulator. It has not been tried on a real console yet, and saving scores to a memory card is still being checked.</p>
+
+  <div class="card">
+    <div id="drop" tabindex="0" role="button" aria-label="Choose the original Pac'N-Jump APK">
+      <strong>Drop your original Pac'N-Jump APK here</strong>
+      or click to choose the file
+    </div>
+    <input id="file" type="file" accept=".apk,application/vnd.android.package-archive,application/octet-stream">
+    <div id="bar"><i></i></div>
+    <ul class="log" id="log"></ul>
+    <div id="msg"></div>
+    <a id="dl" class="btn" hidden>Download PacNJump.cdi</a>
+  </div>
+
+  <h2>Using the image</h2>
+  <ol>
+    <li>Flycast: open <code>PacNJump.cdi</code> as a game.</li>
+    <li>Disc emulator on a real console (GDEMU, USB-GDROM and similar): copy it to the card or drive the way you would any other CDI.</li>
+    <li>A real disc: the image is a self-booting Audio/Data CDI (MIL-CD style). Burn it with software that writes DiscJuggler images, at a low speed.</li>
+  </ol>
+  <p>It takes a minute or two on a computer, and longer on a phone. The disc is built from a ready-made image that has the game program on it, so the page needs that image to be available (it is added to this site by the Dreamcast build). The source for the game and this page is in the repository. This is a fan project and is not affiliated with Namco, Bandai Namco or Sega.</p>
+  <p><a href="./">Android version</a></p>
+</main>
+<script type="module">
+import { buildPack } from './builder.js';
+import { dcPack } from './dc_pack.js';
+import { patchCdi } from './dc_disc.js';
+const $ = (id) => document.getElementById(id);
+const drop = $('drop'), file = $('file'), logEl = $('log'), msg = $('msg'), dl = $('dl'), bar = $('bar'), barFill = bar.firstElementChild;
+let tpl = null, manifest = null, busy = false, url = null;
+
+Promise.all([fetch('dc/pacnjump-dc.json').then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); }),
+             fetch('dc/pacnjump-dc.cdi').then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })])
+  .then(([m, b]) => { manifest = m; tpl = new Uint8Array(b); })
+  .catch(() => { msg.className = 'err'; msg.textContent = 'The Dreamcast disc image this page builds on is not available yet, so nothing can be built right now.'; });
+
+const log = (m) => { const li = document.createElement('li'); li.textContent = m; logEl.appendChild(li); };
+const progress = (f) => { barFill.style.width = Math.round(f * 100) + '%'; };
+
+// the 21 sprite sheets are compressed in parallel, one Worker per core (at most 4); if Workers are not available it runs on the page's thread
+function makeEncoder() {
+  const n = Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2)); let workers = [];
+  try { workers = Array.from({ length: n }, () => new Worker('dc_worker.js', { type: 'module' })); } catch (e) { workers = []; }
+  if (!workers.length) return { encode: null, close() {} };
+  let next = 0, id = 0; const wait = new Map();
+  const free = workers.slice(), queue = [];
+  const pump = () => { while (free.length && queue.length) { const w = free.pop(), j = queue.shift(); w._job = j; w.postMessage({ id: j.id, png: j.png }); } };
+  for (const w of workers) w.onmessage = (e) => { const j = wait.get(e.data.id); wait.delete(e.data.id); free.push(w); pump(); if (e.data.err) j.rej(new Error(e.data.err)); else j.res(e.data.o); };
+  for (const w of workers) w.onerror = (e) => { const j = w._job; if (j) { wait.delete(j.id); j.rej(new Error('sheet compression failed')); } };
+  return {
+    encode: (name, png) => new Promise((res, rej) => { const j = { id: ++id, png: png.slice(), res, rej }; wait.set(j.id, j); queue.push(j); pump(); }),
+    close() { for (const w of workers) w.terminate(); },
+  };
+}
+
+async function run(f) {
+  if (busy || !f) return;
+  if (!tpl) { msg.className = 'err'; msg.textContent = 'The Dreamcast disc image is not loaded yet.'; return; }
+  busy = true; logEl.textContent = ''; msg.className = ''; msg.textContent = 'Working...'; dl.hidden = true; bar.style.display = 'block'; progress(0.02);
+  if (url) { URL.revokeObjectURL(url); url = null; }
+  const enc = makeEncoder();
+  try {
+    const orig = new Uint8Array(await f.arrayBuffer());
+    const { pack } = await buildPack(orig, log);
+    log('Game data read'); progress(0.1);
+    let done = 0;
+    const dc = await dcPack(pack, () => { done++; progress(0.1 + 0.8 * done / 21); if (done === 21) log('Dreamcast graphics made'); }, enc.encode || undefined);
+    log('Disc image'); progress(0.95);
+    const out = patchCdi(tpl, manifest.slot, dc);
+    url = URL.createObjectURL(new Blob([out], { type: 'application/octet-stream' }));
+    dl.href = url; dl.download = 'PacNJump.cdi'; dl.hidden = false; progress(1);
+    msg.textContent = 'Done. ' + (out.length / 1048576).toFixed(1) + ' MB.';
+  } catch (e) { msg.className = 'err'; msg.textContent = e.message || String(e); }
+  enc.close(); busy = false;
+}
+drop.addEventListener('click', () => file.click());
+drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); } });
+file.addEventListener('change', () => { run(file.files[0]); file.value = ''; });
+['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', (e) => run(e.dataTransfer.files[0]));
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => e.preventDefault());
+</script>
+</body>
+</html>
