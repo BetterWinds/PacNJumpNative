@@ -288,6 +288,10 @@ static void draw_import(SDL_Renderer *r) {                  /* 320x480 field coo
     snprintf(b, sizeof b, "%d%%", pm / 10);
     tf_text(r, b, 160, 300, 3, 255, 255, 255);
     tf_text(r, imp_stage_name(imp_stage), 160, 340, 2, 170, 170, 190);
+#ifdef __vita__
+    tf_text(r, "THE FIRST LOAD CAN TAKE", 160, 396, 2, 170, 170, 190);
+    tf_text(r, "UP TO A MINUTE", 160, 422, 2, 170, 170, 190);
+#endif
 }
 #ifndef __ANDROID__
 static void draw_drop_hint(SDL_Renderer *r) {                /* no game data yet */
@@ -439,18 +443,18 @@ static void finger_field(SDL_Window *w, SDL_Renderer *rr, float nx, float ny, fl
 
 /* ---------- remappable keys and pad ---------- */
 static int pad_l, pad_r, stick_l, stick_r;                  /* game controller: dpad and left stick as left/right */
-static unsigned char pstate[SDL_GAMEPAD_BUTTON_COUNT]; static int sdir[4];
+static unsigned char pstate[SDL_GAMEPAD_BUTTON_COUNT]; static int sdir[2][4];   /* [left or right stick][up, down, left, right] */
 static void recalc_pad(void) {
     pad_l = pad_r = 0;
     for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; b++) if (pstate[b]) { int a = act_of_pad(b); if (a == ACT_LEFT) pad_l = 1; else if (a == ACT_RIGHT) pad_r = 1; }
 }
 static void nav_act(int a) { if (a == ACT_LEFT) kb_nav(-1, 0); else if (a == ACT_RIGHT) kb_nav(1, 0); else if (a == ACT_UP) kb_nav(0, -1); else if (a == ACT_DOWN) kb_nav(0, 1); }
-static void stick_dir(int btn, int on) {                    /* the left stick counts as the D-pad, so it follows the same bindings */
-    int i = btn - SDL_GAMEPAD_BUTTON_DPAD_UP; if (sdir[i] == on) return;
-    sdir[i] = on;
+static void stick_dir(int which, int btn, int on) {         /* each stick counts as the D-pad, so it follows the same bindings (and, on the Vita, the same turn) */
+    int i = btn - SDL_GAMEPAD_BUTTON_DPAD_UP; if (sdir[which][i] == on) return;
+    sdir[which][i] = on;
     if (on && kb_active()) nav_act(act_of_pad(btn));
     stick_l = stick_r = 0;
-    for (int d = 0; d < 4; d++) if (sdir[d]) { int a = act_of_pad(SDL_GAMEPAD_BUTTON_DPAD_UP + d); if (a == ACT_LEFT) stick_l = 1; else if (a == ACT_RIGHT) stick_r = 1; }
+    for (int s = 0; s < 2; s++) for (int d = 0; d < 4; d++) if (sdir[s][d]) { int a = act_of_pad(SDL_GAMEPAD_BUTTON_DPAD_UP + d); if (a == ACT_LEFT) stick_l = 1; else if (a == ACT_RIGHT) stick_r = 1; }
 }
 static void cap_key(SDL_Keycode k) {
     int a = cap / 3, sl = cap % 3;
@@ -724,8 +728,13 @@ int main(int argc, char *argv[]) {
                 break; }
             case SDL_EVENT_GAMEPAD_AXIS_MOTION:
                 if (cap >= 0) break;
-                if (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX) { stick_dir(SDL_GAMEPAD_BUTTON_DPAD_LEFT, e.gaxis.value < -12000); stick_dir(SDL_GAMEPAD_BUTTON_DPAD_RIGHT, e.gaxis.value > 12000); }
-                else if (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY) { stick_dir(SDL_GAMEPAD_BUTTON_DPAD_UP, e.gaxis.value < -12000); stick_dir(SDL_GAMEPAD_BUTTON_DPAD_DOWN, e.gaxis.value > 12000); }
+                if (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX) { stick_dir(0, SDL_GAMEPAD_BUTTON_DPAD_LEFT, e.gaxis.value < -12000); stick_dir(0, SDL_GAMEPAD_BUTTON_DPAD_RIGHT, e.gaxis.value > 12000); }
+                else if (e.gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY) { stick_dir(0, SDL_GAMEPAD_BUTTON_DPAD_UP, e.gaxis.value < -12000); stick_dir(0, SDL_GAMEPAD_BUTTON_DPAD_DOWN, e.gaxis.value > 12000); }
+#ifdef __vita__
+                /* the right stick steers too: held turned, it is the one under the other thumb */
+                else if (e.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHTX) { stick_dir(1, SDL_GAMEPAD_BUTTON_DPAD_LEFT, e.gaxis.value < -12000); stick_dir(1, SDL_GAMEPAD_BUTTON_DPAD_RIGHT, e.gaxis.value > 12000); }
+                else if (e.gaxis.axis == SDL_GAMEPAD_AXIS_RIGHTY) { stick_dir(1, SDL_GAMEPAD_BUTTON_DPAD_UP, e.gaxis.value < -12000); stick_dir(1, SDL_GAMEPAD_BUTTON_DPAD_DOWN, e.gaxis.value > 12000); }
+#endif
                 break;
             case SDL_EVENT_FINGER_DOWN: case SDL_EVENT_FINGER_MOTION: case SDL_EVENT_FINGER_UP: {
                 SDL_TouchDeviceType tt = SDL_GetTouchDeviceType(e.tfinger.touchID);
