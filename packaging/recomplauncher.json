@@ -1,0 +1,51 @@
+{
+  "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+  "format": 1,
+  "repo": "heyjonanderson/PacNJumpNative",
+  "name": "Pac'N-Jump",
+  "start": {
+    "program": ["pacnjump.exe", "pacnjump", "PacNJump.app/Contents/MacOS/pacnjump"]
+  },
+  "saves": [
+    "{install}/pnj.sav",
+    "{config}/jon/pnj/pnj.sav",
+    "{local}/jon/pnj/pnj.sav",
+    "{home}/Library/Application Support/jon/pnj/pnj.sav"
+  ],
+  "settings": [
+    {
+      "id": "window",
+      "label": "Window",
+      "help": "Start in a window or fullscreen. F11 switches while you play.",
+      "in": "args",
+      "choices": [
+        { "label": "Auto", "args": [] },
+        { "label": "Windowed", "args": ["--windowed"] },
+        { "label": "Fullscreen", "args": ["--fullscreen"] }
+      ]
+    },
+    {
+      "id": "rotation",
+      "label": "Screen rotation",
+      "help": "Tate turns the picture 90 degrees for a monitor tipped on its side.",
+      "in": "args",
+      "choices": [
+        { "label": "Game's option", "args": [] },
+        { "label": "Standard", "args": ["--orient", "standard"] },
+        { "label": "Tate left", "args": ["--orient", "left"] },
+        { "label": "Tate right", "args": ["--orient", "right"] }
+      ]
+    },
+    {
+      "id": "hdr",
+      "label": "HDR",
+      "help": "Ask for HDR output. Only does anything on an HDR display.",
+      "in": "args",
+      "choices": [
+        { "label": "Game's option", "args": [] },
+        { "label": "On", "args": ["--hdr"] },
+        { "label": "Off", "args": ["--no-hdr"] }
+      ]
+    }
+  ]
+}

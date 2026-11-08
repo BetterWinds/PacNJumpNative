@@ -57,9 +57,9 @@ You need the Android version of the game, a file called `com.namcobandaigames.pa
 | I want to play on | Download or start here | What you need |
 | --- | --- | --- |
 | [Android phone or tablet](#android) | The [project page](https://heyjonanderson.github.io/PacNJumpNative/) builds an installable app from your APK | Android 7.0 or newer, 64-bit |
-| [Windows](#windows) | [`pacnjump-windows-x64.zip`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | Windows 10 or newer |
-| [Mac](#mac) | [`pacnjump-macos.zip`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | Intel or Apple silicon |
-| [Linux and Steam Deck](#linux-and-steam-deck) | [`pacnjump-linux-x64.tar.gz`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | 64-bit Linux |
+| [Windows](#windows) | [`PacNJump-<version>-Windows-x64.zip`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | Windows 10 or newer |
+| [Mac](#mac) | [`PacNJump-<version>-macOS-universal.zip`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | Intel or Apple silicon |
+| [Linux and Steam Deck](#linux-and-steam-deck) | [`PacNJump-<version>-Linux-x64.tar.gz`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | 64-bit Linux |
 | [Nintendo 3DS](#nintendo-3ds) | [`pacnjump.cia`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | A 3DS with custom firmware |
 | [PS Vita](#ps-vita) | [`pacnjump.vpk`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | A Vita with custom firmware |
 | [Sega Dreamcast](#sega-dreamcast) | The [Dreamcast page](https://heyjonanderson.github.io/PacNJumpNative/dreamcast.html) builds a disc image from your APK | Works on an emulator, or an ODE on a real console. Untested on burned disc, but should work! |
@@ -77,19 +77,19 @@ Building again later in the same browser makes an app that installs over the old
 
 #### Windows
 
-1. Download `pacnjump-windows-x64.zip`, right-click it and choose Extract All.
+1. Download `PacNJump-<version>-Windows-x64.zip`, right-click it and choose Extract All.
 2. Open the folder and run `pacnjump.exe`. Windows may say it protected your PC because the app is new and unsigned. Click More info, then Run anyway.
 3. The game asks for its data. Drag your APK onto the window. A progress bar shows while it imports, and this only happens once.
 
 #### Mac
 
-1. Download `pacnjump-macos.zip`, open it, and move `PacNJump.app` to your Applications folder.
+1. Download `PacNJump-<version>-macOS-universal.zip`, open it, and move `PacNJump.app` to your Applications folder.
 2. The first launch is blocked because the app is not signed. See [macOS first launch](#macos-first-launch) for the clicks that get past it.
 3. Drag your APK onto the window, or onto the app's icon. It imports once.
 
 #### Linux and Steam Deck
 
-1. Download `pacnjump-linux-x64.tar.gz` and unpack it with `tar xzf pacnjump-linux-x64.tar.gz`.
+1. Download `PacNJump-<version>-Linux-x64.tar.gz` and unpack it with `tar xzf PacNJump-<version>-Linux-x64.tar.gz`.
 2. Run `./pacnjump` from the new folder, then drag your APK onto the window. You can also import from a terminal with `./pacnjump --import path/to/your.apk`.
 3. On a Steam Deck, do this in Desktop Mode. The game starts fullscreen on its own. The Steam Deck has not been tested yet.
 
