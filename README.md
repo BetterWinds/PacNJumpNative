@@ -269,26 +269,14 @@ No art, sound, level data, sprite table or Help text. What is in the repo is the
 | --- | --- | --- |
 | Nintendo Switch | devkitA64 and libnx, the SDL shell mostly carries over | Build target, pack on the SD card, pillarboxed portrait field |
 | iOS | The SDL shell built in Xcode, import through the Files app | Xcode project, CI build, and how to distribute it (a sideload or TestFlight, since the data has to come from the player's own APK) |
-| MS-DOS (486, Pentium) and Windows 9x | DJGPP or Open Watcom, one software renderer for both, VESA and Sound Blaster on DOS, Win32 on 9x (SDL3 does not run there) | 256-color art with a palette reserved for glow, software sprites. A Pentium has an FPU, so the core runs unchanged. VESA 640x480 shows the field 1:1 |
-| Nintendo DS | devkitARM and libnds, two 256x192 screens stack to 256x384 (a 0.8 scale of the field) | No FPU, so soft-float if it measures well, otherwise fixed point. Art and audio cut down for 4 MB of RAM. Portrait only, no tate |
-| Game Boy Advance, Analogue Pocket | devkitARM, the Pocket through its GBA support | An adaptation more than a port: no FPU, tile and palette art, 96 KB of VRAM, 240x160 landscape screen. Portrait is about a 0.33 scale. Tate at half scale fits exactly, and suits the original GBA, the Micro and GBA Macro mods |
-| Amiga (A1200 first) | m68k gcc | Planar graphics drawn with the blitter, 320x256 PAL screen, soft-float core. The pack has to fit floppies or install to a hard disk |
-| 3DO | ARM60, no FPU | Tooling needs research first. The cel engine suits the sprites, 320x240, and the disc format is obscure |
-| FM Towns | 386 to Pentium class, boots from CD | Tooling needs research, and the FPU depends on the model. 640x480 shows the field 1:1 |
-| Sega 32X | Two SH-2s blitting into the framebuffer | 256 KB of RAM, 4 MB cart, needs a Genesis underneath, 320x224 |
-| Sega Saturn | libyaul or Jo Engine | VDP1 and VDP2 setup, about 512 KB of sprite VRAM, palettised art, soft-float or fixed-point core |
-| Atari Jaguar, Jaguar CD | m68k plus Tom and Jerry RISC code | Soft-float or fixed-point core, 2 MB RAM, hand-written blitter code. The CD version could stream music |
-| Neo Geo | m68k gcc (ngdevkit) | Renderer rebuilt around the sprite hardware, 320x224, packaging the ROM set |
-| Sega Genesis, Sega CD | m68k gcc (SGDK) | A tile renderer rewrite, 320x224, 4 MB cart limit on the Genesis. The Sega CD disc has the room and CD audio |
-| Super Nintendo | 65816, no C core | A rewrite (a demake) from the level data rather than a port: 256x224, 4 and 2 bpp tiles, music recomposed for the SPC700 |
-| NES | 6502, no C core | A rewrite (a demake): 256x240, 4-color tiles, 2 KB of RAM, music recomposed for the APU |
+| Nintendo DS | devkitARM and libnds, two 256x192 screens stack to 256x384 | No FPU, so a fixed-point core, and art and audio cut down for 4 MB of RAM |
+| Game Boy Advance, Analogue Pocket | devkitARM, the Pocket through its GBA support | An adaptation more than a port: no FPU, tile and palette art, 240x160 landscape screen |
+| MS-DOS (486, Pentium) | DJGPP with a VESA and Sound Blaster layer | 256-color art with a palette reserved for glow, software sprites |
+| Sega Saturn | libyaul or Jo Engine | Fixed-point core, VDP1 and VDP2 setup, palettised art |
+| Atari Jaguar, Jaguar CD | m68k plus Tom and Jerry RISC code | Fixed-point core, 2 MB RAM, hand-written blitter code. The CD version could stream music |
 | Virtual Boy | The community V810 toolchain, VUEngine | Research. 64 KB of RAM, four shades of red, audio rewritten for the wavetable channels |
 
-The small and old targets share two prerequisites: a per-target mode in `tools/make_pack.py` that scales, palettizes and re-encodes art and audio, and a build of the core with a replay test that proves it plays the same run as the double build. On the chips with no FPU (68000, SH-2, ARM7 and ARM9) soft-float doubles may be fast enough, since the game is light, so that gets measured before anyone rewrites the math in fixed point. The 6502 and 65816 cannot realistically build the core at all, so the NES and SNES would be rewrites from the level data.
-
-Screens shorter than the 480-row field show it scaled to the screen's height: half size on a 240-row screen, about 0.47 on a 224-row one, 0.8 across the DS's two screens. Portrait is the default everywhere. Tate is offered where turning the display makes sense, including the GBA family, and not on the DS. Tile and sprite hardware cannot rotate tiles, so the pack rotates the art ahead of time and the scroll runs along the other axis.
-
-There is no route to PS5, since there is no public homebrew SDK.
+The small and old targets share two prerequisites: a per-target mode in `tools/make_pack.py` that scales, palettizes and re-encodes art and audio, and a float or fixed-point build of the core with a replay test that proves it plays the same run as the double build. There is no route to PS5, since there is no public homebrew SDK.
 
 ## Code signing
 
