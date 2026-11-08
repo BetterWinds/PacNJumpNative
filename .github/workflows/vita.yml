@@ -1,4 +1,4 @@
-# Builds the PlayStation Vita port (.vpk) with VitaSDK. Works on the vita branch and on tags; the vpk contains no game data.
+# Builds the PlayStation Vita port (.vpk) with VitaSDK. Tags publish a zip with the .vpk and a txt on where to put things. No game data anywhere.
 name: Vita
 on:
   push:
@@ -25,8 +25,12 @@ jobs:
           export PATH=$VITASDK/bin:$PATH
           cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DPNJ_VERSION=$PNJ_VERSION
           cmake --build build
+      - name: Stage the vpk and the txt
+        run: |
+          test -s build/pacnjump.vpk || { echo "no vpk was made"; exit 1; }
+          mkdir -p out && cp build/pacnjump.vpk packaging/vita/README-Vita.txt out/
       - uses: actions/upload-artifact@v4
-        with: { name: "pacnjump-vita-${{ env.PNJ_VERSION }}", path: build/pacnjump.vpk }
+        with: { name: "pacnjump-vita-${{ env.PNJ_VERSION }}", path: out/ }
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -37,12 +41,16 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { path: dl, merge-multiple: true }
-      - name: Pick the release files
+      - name: Make the release zip
+        env: { TAG: '${{ github.ref_name }}' }
         run: |
           ls -l dl
-          test "$(ls dl | wc -l)" -eq 1 || { echo "expected the vpk only"; exit 1; }
+          test "$(ls dl | wc -l)" -eq 2 || { echo "expected the vpk and the txt only"; exit 1; }
+          test -s dl/pacnjump.vpk && test -s dl/README-Vita.txt || { echo "the vpk or the txt is missing"; exit 1; }
           unzip -Z1 dl/pacnjump.vpk | grep -qiE "pnj\.pack|\.apk$|\.ogg$|\.wav$|\.3gp$" && { echo "the vpk holds game data, refusing to publish"; exit 1; } || true
+          mkdir pacnjump-vita && cp dl/pacnjump.vpk dl/README-Vita.txt pacnjump-vita/
+          zip -r "PacNJump-$TAG-Vita.zip" pacnjump-vita
+          unzip -l "PacNJump-$TAG-Vita.zip"
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dl/pacnjump.vpk
+          files: PacNJump-${{ github.ref_name }}-Vita.zip

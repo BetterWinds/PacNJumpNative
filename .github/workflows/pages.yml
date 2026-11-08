@@ -70,6 +70,8 @@ jobs:
             cdi=$(find /tmp/dc -name pacnjump-dc.cdi | head -1); js=$(find /tmp/dc -name pacnjump-dc.json | head -1)
             if [ -n "$cdi" ] && [ -n "$js" ]; then cp "$cdi" web/dc/pacnjump-dc.cdi; cp "$js" web/dc/pacnjump-dc.json; ls -la web/dc; else echo "no Dreamcast template in that run"; fi
           else echo "no successful Dreamcast build yet"; fi
+      - name: Leave out the dev test scripts
+        run: rm -f web/test_*.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

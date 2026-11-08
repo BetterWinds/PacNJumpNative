@@ -1,4 +1,4 @@
-# Builds the Nintendo 3DS port (.3dsx, and a .cia for the Home menu) with devkitARM. Works on the 3ds branch and on tags; neither contains game data.
+# Builds the Nintendo 3DS port (a .cia for the Home menu) with devkitARM. Tags publish a zip with the .cia and a txt on where to put things. No game data anywhere.
 name: 3DS
 on:
   push:
@@ -41,14 +41,10 @@ jobs:
           export PATH=$DEVKITPRO/tools/bin:$DEVKITARM/bin:$PATH
           cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake -DCMAKE_BUILD_TYPE=Release -DPNJ_VERSION=$PNJ_VERSION
           cmake --build build
-          ls -la build/*.3dsx
-          cmake -S . -B build-alt -G Ninja -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/3DS.cmake -DCMAKE_BUILD_TYPE=Release -DPNJ_VERSION=$PNJ_VERSION -DPNJ_3DS_TEX_FLIP=1
-          cmake --build build-alt
-          mkdir -p out && cp build/pacnjump.3dsx out/pacnjump.3dsx && cp build-alt/pacnjump.3dsx out/pacnjump-flip1.3dsx
       - name: CIA (Home menu installer)
-        continue-on-error: true
         run: |
           export DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
+          mkdir -p out
           export PATH=$DEVKITPRO/tools/bin:$PATH
           apt-get install -y --no-install-recommends wget unzip python3
           wget -q https://github.com/diasurgical/bannertool/releases/download/1.2.0/bannertool.zip
@@ -67,6 +63,8 @@ jobs:
           bannertool makesmdh -s "Pac'N-Jump" -l "Pac'N-Jump" -p " " -i packaging/n3ds/icon.png -o icon.icn
           ELF=$(ls build/pacnjump.elf build/pacnjump 2>/dev/null | head -1); echo "elf: $ELF"
           makerom -f cia -o out/pacnjump.cia -elf "$ELF" -rsf app.rsf -target t -exefslogo -icon icon.icn -banner banner.bnr
+          test -s out/pacnjump.cia || { echo "no cia was made"; exit 1; }
+          cp packaging/n3ds/README-3DS.txt out/
           ls -la out
       - uses: actions/upload-artifact@v4
         with: { name: "pacnjump-3ds-${{ env.PNJ_VERSION }}", path: out/ }
@@ -80,12 +78,16 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { path: dl, merge-multiple: true }
-      - name: Pick the release files
+      - name: Make the release zip
+        env: { TAG: '${{ github.ref_name }}' }
         run: |
           ls -l dl
-          test -f dl/pacnjump.3dsx || { echo "no 3dsx"; exit 1; }
+          test "$(ls dl | wc -l)" -eq 2 || { echo "expected the cia and the txt only"; exit 1; }
+          test -s dl/pacnjump.cia && test -s dl/README-3DS.txt || { echo "the cia or the txt is missing"; exit 1; }
+          test "$(stat -c %s dl/pacnjump.cia)" -lt 4000000 || { echo "the cia is bigger than expected, it may hold game data"; exit 1; }
+          mkdir pacnjump-3ds && cp dl/pacnjump.cia dl/README-3DS.txt pacnjump-3ds/
+          zip -r "PacNJump-$TAG-3DS.zip" pacnjump-3ds
+          unzip -l "PacNJump-$TAG-3DS.zip"
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dl/pacnjump.3dsx
-            dl/pacnjump.cia
+          files: PacNJump-${{ github.ref_name }}-3DS.zip

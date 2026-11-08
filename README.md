@@ -1,6 +1,6 @@
 # Pac'N-Jump native
 
-A fan port of Pac'N-Jump, Namco's 2011 phone game that has since been pulled from the Android and iOS app stores. It plays like the original, with all 8 stages, the menus, Help pages and achievements, and it runs on Windows, macOS, Linux, Android, Nintendo 3DS, PS Vita and Sega Dreamcast.
+A fan port of Pac'N-Jump, Namco's 2011 phone game that has since been pulled from the Android and iOS app stores. It plays like the original, with all 8 stages, the menus, Help pages and achievements, and it runs on Windows, macOS, Linux, Android, Nintendo 3DS, PS Vita, and Sega Dreamcast.
 
 **You bring your own copy of the game.** This project has none of Namco's art, sound or levels in it. The first time you run it, it builds what it needs from the original Android APK file. That happens on your own device or in your own browser, and your APK is never uploaded anywhere.
 
@@ -11,7 +11,7 @@ A fan port of Pac'N-Jump, Namco's 2011 phone game that has since been pulled fro
 - Stage select, high scores, achievements, Help pages and a pause menu.
 - Sound effects and music, each with its own on/off switch and volume slider, and the power-up jingle when you grab a power pellet.
 - Scores and settings are saved.
-- Tate mode (Windows, macOS, Linux, Vita and Dreamcast): turn the picture 90 degrees and play with the screen on its side, as you would an arcade cabinet.
+- Tate mode (Windows, macOS, Linux, Vita, and Dreamcast): turn the picture 90 degrees and play with the screen on its side, as you would an arcade cabinet.
 - It makes no network connections.
 
 **Windows, macOS and Linux**
@@ -60,8 +60,8 @@ You need the Android version of the game, a file called `com.namcobandaigames.pa
 | [Windows](#windows) | [`PacNJump-<version>-Windows-x64.zip`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | Windows 10 or newer |
 | [Mac](#mac) | [`PacNJump-<version>-macOS-universal.zip`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | Intel or Apple silicon |
 | [Linux and Steam Deck](#linux-and-steam-deck) | [`PacNJump-<version>-Linux-x64.tar.gz`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | 64-bit Linux |
-| [Nintendo 3DS](#nintendo-3ds) | [`pacnjump.cia`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | A 3DS with custom firmware |
-| [PS Vita](#ps-vita) | [`pacnjump.vpk`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | A Vita with custom firmware |
+| [Nintendo 3DS](#nintendo-3ds) | [`PacNJump-<version>-3DS.zip`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | A 3DS with custom firmware |
+| [PS Vita](#ps-vita) | [`PacNJump-<version>-Vita.zip`](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) | A Vita with custom firmware |
 | [Sega Dreamcast](#sega-dreamcast) | The [Dreamcast page](https://heyjonanderson.github.io/PacNJumpNative/dreamcast.html) builds a disc image from your APK | Works on an emulator, or an ODE on a real console. Untested on burned disc, but should work! |
 
 The downloads are all on the [latest release](https://github.com/heyjonanderson/PacNJumpNative/releases/latest) page, under Assets.
@@ -97,7 +97,7 @@ Building again later in the same browser makes an app that installs over the old
 
 You need a 3DS running custom firmware (the [3DS Hacks Guide](https://3ds.hacks.guide/) covers it) and a way to install CIA files, such as [FBI](https://github.com/steveice10/FBI). A New 3DS XL is tested. The original 3DS and 2DS have not been tried yet.
 
-1. Copy `pacnjump.cia` to your SD card and install it with FBI. A Pac'N-Jump icon appears on the Home menu.
+1. Unzip `PacNJump-<version>-3DS.zip` (it holds `pacnjump.cia` and a short txt with these steps), copy `pacnjump.cia` to your SD card, and install it with FBI. A Pac'N-Jump icon appears on the Home menu.
 2. Copy your APK to `SD:/3ds/pacnjump/` on the SD card. If the folder is not there, make it.
 3. Start the game. It finds the APK and imports it, which takes a few minutes the first time. Keep the power on and the SD card in.
 4. For sound, the 3DS needs its DSP firmware file at `SD:/3ds/dspfirm.cdc`. Without it the game runs silent. The DSP1 homebrew app makes that file from your own console.
@@ -106,7 +106,7 @@ You need a 3DS running custom firmware (the [3DS Hacks Guide](https://3ds.hacks.
 
 You need a Vita running custom firmware (the [Vita Hacks Guide](https://vita.hacks.guide/) covers it) with [VitaShell](https://github.com/TheOfficialFloW/VitaShell) installed.
 
-1. Copy `pacnjump.vpk` to the Vita (USB or FTP from VitaShell) and install it from VitaShell. A Pac'N-Jump bubble appears on the LiveArea.
+1. Unzip `PacNJump-<version>-Vita.zip` (it holds `pacnjump.vpk` and a short txt with these steps), copy `pacnjump.vpk` to the Vita (USB or FTP from VitaShell), and install it from VitaShell. A Pac'N-Jump bubble appears on the LiveArea.
 2. Start the game once. It creates its data folder and shows where it is looking for your APK.
 3. Copy your APK into `ux0:data/jon/pnj/`. The game finds it by itself and imports it, which takes up to a minute the first time.
 4. To play with the Vita turned on its side, open Options > Video and set SCREEN ROTATION. Both sticks steer.
@@ -257,7 +257,7 @@ No art, sound, level data, sprite table or Help text. What is in the repo is the
 
 ## Roadmap
 
-**Now: 0.9.0, then testing.** Android, Windows, macOS, Linux, Nintendo 3DS, PS Vita and Sega Dreamcast are in the release. The work left is testing on more hardware (the original 3DS and 2DS, Steam Deck, PAL Dreamcasts) and getting to a 1.0. Also open: an icon on the 3DS that matches the Android app's (the repo cannot hold that art, so it would come from the player's own APK or be a close redraw), and PAL support on the Dreamcast, which needs a timing change because the game steps at 60 per second. A RecompLauncher manifest (launching plus in-launcher settings) is already in main and ships with the next release, once the launcher lists the project.
+**Now: 0.9.0, then testing.** Android, Windows, macOS, Linux, Nintendo 3DS, PS Vita, and Sega Dreamcast are in the release. The work left is testing on more hardware (the original 3DS and 2DS, Steam Deck, PAL Dreamcasts) and getting to a 1.0. Also open: an icon on the 3DS that matches the Android app's (the repo cannot hold that art, so it would come from the player's own APK or be a close redraw), and PAL support on the Dreamcast, which needs a timing change because the game steps at 60 per second. A RecompLauncher manifest (launching plus in-launcher settings) is already in main and ships with the next release, once the launcher lists the project.
 
 **Later, on the current platforms:** Windows code signing (see below), language select (the pack already carries every language file), tilt input (the original was tilt-controlled), foldable and two-screen Android phones, a 32-bit Android build.
 
