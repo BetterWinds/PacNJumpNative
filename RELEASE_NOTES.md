@@ -1,4 +1,4 @@
-# Pac'N-Jump native 0.9.0
+# Pac'N-Jump native 0.9.1
 
 A port of Pac'N-Jump (Namco, 2011), a mobile game that was pulled from the Android and iOS app stores. Portable C99 core with an SDL3 shell. All 8 stages, menus, help and achievements are in.
 
@@ -14,7 +14,13 @@ The release has none of the original game's art, sound or level data. You bring 
 | Sega Dreamcast | Build one CDI from your APK in your browser, on the project page https://heyjonanderson.github.io/PacNJumpNative/dreamcast.html | Real console with MODE, progressive and interlaced video on CRTs. VMU saves work. Burned discs and PAL consoles untested |
 | PS Vita | `pacnjump.vpk`, install it with VitaShell, then copy your APK into `ux0:data/jon/pnj/` | Vita3K, Real Vita |
 
-## What is new in 0.9.0
+## What is new in 0.9.1
+
+- RecompLauncher support for the desktop builds. The release files now include a `recomplauncher.json` so the launcher can start the game and show its settings (window or fullscreen, screen rotation, HDR). The project is not listed in the launcher yet, and the file has not been tested inside it.
+- The desktop downloads now carry the version and platform in their names, for example `PacNJump-v0.9.1-Windows-x64.zip`, which is how the launcher looks for them. The contents are the same.
+- The README is rewritten for first-time readers, with a features list.
+
+## What came in 0.9.0
 
 - Nintendo 3DS, PS Vita and Sega Dreamcast ports.
 - Browser builders for Android and Dreamcast. Your APK stays in your browser and is not uploaded.
@@ -29,5 +35,6 @@ The release has none of the original game's art, sound or level data. You bring 
 - Analog sticks are read as a digital direction. True analog control is planned for every version.
 - The Windows exe is unsigned, so SmartScreen may warn the first time. macOS needs the Open Anyway step on first launch.
 - The Help pages come from the original game, so they describe its phone controls (touch and tilt), including on the Dreamcast.
+- RecompLauncher support is new. It has not been tested in the launcher yet.
 - Platforms marked untested above should work, but nobody has tried them. Reports are welcome.
 
